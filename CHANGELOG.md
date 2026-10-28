@@ -3,6 +3,7 @@
 ## [0.1.2] - Quiz-start fix and draggable panel
 
 ### Added
+- New NetAcad Companion icon, with an editable SVG and 16, 32, 48 and 128 px toolbar assets.
 - Drag the panel header or compact control to move it away from course buttons.
 - Move the focused header with arrow keys; Home resets its position. The panel stays on-screen after resizing.
 

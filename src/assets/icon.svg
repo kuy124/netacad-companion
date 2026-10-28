@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>NetAcad Companion</title>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#142e38"/>
+  <path d="M80 38a35 35 0 1 0 0 52" fill="none" stroke="#f7faf8" stroke-width="12" stroke-linecap="round"/>
+  <path d="m62 65 13 13 29-31" fill="none" stroke="#83c74c" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
