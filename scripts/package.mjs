@@ -18,7 +18,7 @@ if (!['chromium', 'firefox'].includes(target)) throw new Error('Use chromium or 
 const srcDir = path.join(root, target === 'firefox' ? 'dist-firefox' : 'dist');
 const outDir = path.join(root, 'release');
 
-const {version} = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const {name, version} = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
 if (!fs.existsSync(path.join(srcDir, 'manifest.json'))) {
   console.error(`${srcDir}/manifest.json is missing — build ${target} first.`);
@@ -110,12 +110,12 @@ const archive = buildZip(files);
 
 fs.mkdirSync(outDir, {recursive: true});
 
-const base = `meowcad-solver-v${version}-${target}`;
+const base = `${name}-v${version}-${target}`;
 
 if (target === 'firefox') fs.writeFileSync(path.join(outDir, `${base}.xpi`), archive);
 fs.writeFileSync(path.join(outDir, `${base}.zip`), archive);
 
-const checksums = fs.readdirSync(outDir).filter(name => name.startsWith(`meowcad-solver-v${version}-`) && /\.(zip|xpi)$/.test(name))
+const checksums = fs.readdirSync(outDir).filter(file => file.startsWith(`${name}-v${version}-`) && /\.(zip|xpi)$/.test(file))
   .sort().map(name => `${createHash('sha256').update(fs.readFileSync(path.join(outDir, name))).digest('hex')}  ${name}`);
 fs.writeFileSync(path.join(outDir, 'SHA256SUMS.txt'), checksums.join('\n') + '\n');
 console.log(`packaged ${files.length} files -> release/${base}.zip (${archive.length} bytes)`);

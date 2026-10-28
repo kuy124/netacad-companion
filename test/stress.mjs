@@ -1,5 +1,5 @@
 /**
- * NetAcad Solver — stress test suite
+ * NetAcad Companion - stress test suite
  *
  * Loads the built content script (dist/content.js) into a simulated NetAcad
  * page via jsdom and verifies the extension is stable: it highlights the
@@ -526,15 +526,15 @@ async function scenarioErrors() {
 async function scenarioText() {
   const s = scenario('I. Unicode & HTML text');
   const components = [{
-    _id: 'tq', _component: 'mcq', body: '<p>Ünïcödé 🐱 <b>body</b></p>',
+    _id: 'tq', _component: 'mcq', body: '<p>Ünïcödé café <b>body</b></p>',
     _items: [
       { text: '<p>日本語 <b>テスト</b></p>', _shouldBeSelected: true },
-      { text: '<p>emoji 🎉 &amp; amp</p>', _shouldBeSelected: false },
+      { text: '<p>résumé &amp; amp</p>', _shouldBeSelected: false },
     ],
   }];
-  const html = `<!DOCTYPE html><html><body><div class="tq"><div>Ünïcödé 🐱 <b>body</b></div>
+  const html = `<!DOCTYPE html><html><body><div class="tq"><div>Ünïcödé café <b>body</b></div>
     <input type="checkbox" id="tq-0-input"><label id="tq-0-label" for="tq-0-input">日本語 <b>テスト</b></label>
-    <input type="checkbox" id="tq-1-input"><label id="tq-1-label" for="tq-1-input">emoji 🎉 &amp; amp</label>
+    <input type="checkbox" id="tq-1-input"><label id="tq-1-label" for="tq-1-input">résumé &amp; amp</label>
   </div></body></html>`;
   const env = makeEnv({ components, html, id: 'text' });
   await sleep(700);

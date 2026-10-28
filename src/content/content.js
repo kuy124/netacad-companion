@@ -315,7 +315,7 @@ const updateModeBadge = () => {
     controls.dataset.status = statusKey;
     controls.querySelector('.solver-mode-status').textContent = checklistRunning
       ? 'Chapter checklist running' : mode === 'brutal' ? 'Automatic submission' : 'Manual submission';
-    controls.querySelector('summary').setAttribute('aria-label', `NetAcad Solver controls, ${checklistRunning
+    controls.querySelector('summary').setAttribute('aria-label', `NetAcad Companion controls, ${checklistRunning
       ? 'chapter checklist running' : mode === 'brutal' ? 'Brutal mode, automatic submission' : 'Easy mode, manual submission'}`);
   }
 
@@ -436,27 +436,27 @@ const ensureModeBadge = () => {
             #${MODE_CONTROLS_ID} input::before { display: none; }
           }
         </style>
-        <summary title="Open solver controls" aria-label="NetAcad Solver controls">
+        <summary title="Open controls" aria-label="NetAcad Companion controls">
           <svg class="solver-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1m0-15c3-2 6-2 9-1v15c-3-1-6-1-9 1V5Z"/></svg>
-          <strong class="solver-summary-copy">NetAcad Solver</strong>
+          <strong class="solver-summary-copy">NetAcad Companion</strong>
           <span id="${MODE_BADGE_ID}" role="status"></span>
           <svg class="solver-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 10 4-4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </summary>
         <section class="solver-panel" aria-label="Solver settings">
           <header class="solver-panel-header">
-            <div><strong>NetAcad Solver</strong><span class="solver-mode-status"></span></div>
+            <div><strong>NetAcad Companion</strong><span class="solver-mode-status"></span></div>
             <button type="button" class="solver-close" aria-label="Close solver settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
           </header>
           <div class="solver-section">
             <div class="solver-panel-heading"><span class="solver-section-label">Answer mode</span><span class="solver-shortcut" aria-label="Control Shift M"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>M</kbd></span></div>
             <div class="solver-modes" role="group" aria-label="Solver mode" aria-describedby="netacad-solver-mode-description">
               <button type="button" data-mode="safe" aria-pressed="false">
-                <span class="solver-option-heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><strong>Easy</strong><span class="solver-option-check" aria-hidden="true">✓</span></span>
+                <span class="solver-option-heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><strong>Easy</strong><span class="solver-option-check" aria-hidden="true"></span></span>
                 <span class="solver-option-copy">Select on demand.<br>Submit yourself.</span>
               </button>
               <button type="button" data-mode="brutal" aria-pressed="false">
-                <span class="solver-option-heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2-9 12h7l-1 8 10-12h-7l1-8Z"/></svg><strong>Brutal</strong><span class="solver-option-check" aria-hidden="true">✓</span></span>
-                <span class="solver-option-copy">Select and submit.<br>Fully automatic.</span>
+                <span class="solver-option-heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2-9 12h7l-1 8 10-12h-7l1-8Z"/></svg><strong>Brutal</strong><span class="solver-option-check" aria-hidden="true"></span></span>
+                <span class="solver-option-copy">Select and submit.<br>Available answers only.</span>
               </button>
             </div>
             <p id="netacad-solver-mode-description"></p>

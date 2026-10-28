@@ -6,12 +6,12 @@ import zlib from 'node:zlib';
 import {fileURLToPath} from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const {version} = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const {name, version} = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const allowed = ['background.js', 'content.js', 'intercept.js', 'catcher.js', 'manifest.json',
   'icon-16.png', 'icon-32.png', 'icon-48.png', 'icon-128.png', 'NOTICE.md', 'LICENSE-webextension-polyfill.txt'];
 
 for (const target of ['chromium', 'firefox']) {
-  const file = path.join(root, 'release', `meowcad-solver-v${version}-${target}.zip`);
+  const file = path.join(root, 'release', `${name}-v${version}-${target}.zip`);
   const bytes = fs.readFileSync(file);
   const entries = new Map();
   let offset = 0;
@@ -22,6 +22,8 @@ for (const target of ['chromium', 'firefox']) {
     const start = offset + 30 + nameLength + bytes.readUInt16LE(offset + 28);
     const name = bytes.subarray(offset + 30, offset + 30 + nameLength).toString('utf8');
     const data = zlib.inflateRawSync(bytes.subarray(start, start + size));
+    if (/\.(js|json|md|txt)$/.test(name))
+      assert(!/\p{Emoji_Presentation}|\uFE0F|\u200D/u.test(data.toString('utf8')), `${name}: no emoji`);
     assert.equal(data.length, bytes.readUInt32LE(offset + 22), `${name}: size`);
     assert.equal(zlib.crc32(data) >>> 0, bytes.readUInt32LE(offset + 14), `${name}: CRC`);
     assert(!entries.has(name), 'no duplicate entries');
@@ -32,7 +34,7 @@ for (const target of ['chromium', 'firefox']) {
   assert.deepEqual([...entries.keys()].sort(), [...allowed].sort(), 'only distribution files');
   const manifest = JSON.parse(entries.get('manifest.json').toString());
   assert.equal(manifest.version, version);
-  assert.equal(manifest.name, 'MeowCad Solver');
+  assert.equal(manifest.name, 'NetAcad Companion');
   assert(entries.get('NOTICE.md').toString().includes('ingui-n/netacad-solver'));
   if (target === 'firefox') {
     assert.equal(manifest.browser_specific_settings.gecko.id, 'meowcad-solver@kuy124.github.io');

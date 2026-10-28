@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "MeowCad Solver",
-  "description": "NetAcad answer highlights and paced chapter checklists, with video skipping and document visits.",
-  "version": "0.1.0",
+  "name": "NetAcad Companion",
+  "description": "Chapter checklists and answer assistance for NetAcad.",
+  "version": "0.1.1",
   "browser_specific_settings": {
     "gecko": {
       "id": "meowcad-solver@kuy124.github.io",

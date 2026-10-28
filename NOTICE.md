@@ -1,6 +1,6 @@
 # Attribution and licensing
 
-MeowCad Solver is **heavily based on and inspired by**
+NetAcad Companion is **heavily based on and inspired by**
 [ingui-n/netacad-solver](https://github.com/ingui-n/netacad-solver).
 Credit for the original automatic solver, interception approach, and DOM-search
 foundation belongs to ingui-n and the original project's contributors.

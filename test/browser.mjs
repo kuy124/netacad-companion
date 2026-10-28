@@ -1,5 +1,5 @@
 /**
- * NetAcad Solver — real-browser rigour suite
+ * NetAcad Companion - browser regression suite
  *
  * jsdom (test/stress.mjs) proves the logic, but it does NOT do real layout, real
  * event dispatch, or real CSS resolution. This harness loads the built content

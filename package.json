@@ -1,13 +1,13 @@
 {
-  "name": "meowcad-solver",
-  "version": "0.1.0",
-  "description": "NetAcad answer highlights and paced chapter checklists, with video skipping and document visits.",
+  "name": "netacad-companion",
+  "version": "0.1.1",
+  "description": "Chapter checklists and answer assistance for NetAcad.",
   "engines": {
     "node": "^22.18.0 || >=24.11.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/kuy124/meowcad-solver.git"
+    "url": "https://github.com/kuy124/netacad-companion.git"
   },
   "scripts": {
     "start": "webpack --watch --progress --config webpack.dev.js",

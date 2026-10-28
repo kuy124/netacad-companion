@@ -1,112 +1,84 @@
-# MeowCad Solver
+# NetAcad Companion
 
-**Less clicking. Clearer controls. Smarter NetAcad chapter checklists.**
+A browser extension for NetAcad chapter reading, checklists and answer assistance.
 
-> Heavily based on and inspired by **[ingui-n/netacad-solver](https://github.com/ingui-n/netacad-solver)**.
-> The original auto-solver and its DOM/interception foundation deserve the credit.
-> This is an independently maintained derivative, not an official Cisco extension.
+Heavily based on [ingui-n/netacad-solver](https://github.com/ingui-n/netacad-solver).
+Credit for the original automatic solver and DOM/interception foundation belongs
+to that project. This is an independently maintained derivative, not a Cisco product.
 
-## Download and start
+## Install
 
-**[Latest release →](https://github.com/kuy124/meowcad-solver/releases/latest)**
+[Download the latest release](https://github.com/kuy124/netacad-companion/releases/latest).
 
-| Browser | Download | Install |
-| --- | --- | --- |
-| Chrome, Edge, Brave, Vivaldi | `meowcad-solver-v0.1.0-chromium.zip` | Extract → open `chrome://extensions` → enable Developer mode → **Load unpacked** → select the extracted folder containing `manifest.json`. |
-| Firefox 128+ | `meowcad-solver-v0.1.0-firefox.xpi` | Open `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → select the XPI. |
-
-The Firefox download is **unsigned** and temporary: it unloads when Firefox closes.
-Permanent Firefox installation requires Mozilla signing. These packages are not
-Chrome Web Store or Firefox Add-ons store releases. Respect your organization's
-browser policies; do not bypass blocked installation settings.
-
-## Pick your mode
-
-- **Easy — default:** highlights available answers. **Select answers** or `Ctrl+Shift+Y`
-  selects them; you review and submit yourself.
-- **Brutal:** automatically selects and submits supported questions. Switching to
-  Brutal can submit the current question immediately.
-
-Open the bottom-right **NetAcad Solver** control to switch modes. `Escape` collapses it.
-
-| Shortcut | Action |
+| Browser | File |
 | --- | --- |
-| `Ctrl+Shift+Y` | Select available correct answers |
-| `Ctrl+Shift+H` | Show/hide answer highlights |
-| `Ctrl+Shift+M` | Switch Easy/Brutal |
+| Chrome, Edge, Brave, Vivaldi | `netacad-companion-v0.1.1-chromium.zip` |
+| Firefox 128+ | `netacad-companion-v0.1.1-firefox.xpi` |
 
-Repeated selection does not toggle already-selected answers off. Matching pairs
-and accordion headers use distinct highlight colors.
+For Chromium browsers, extract the ZIP, open `chrome://extensions`, enable Developer
+mode and choose **Load unpacked**. Select the folder containing `manifest.json`.
 
-## Automate a chapter
+For Firefox, open `about:debugging#/runtime/this-firefox`, choose
+**Load Temporary Add-on** and select the XPI. The unsigned add-on unloads when Firefox closes.
+Permanent installation requires Mozilla signing.
 
-1. Open your course at [netacad.com](https://www.netacad.com/) with **Course Outline** visible.
-2. Choose **Easy** → expand **Chapter checklist** → refresh the chapter list if needed.
-3. Check a chapter, such as **Module 12**, and press **Start**.
-4. Keep the course tab open. **Stop** cancels the run.
+Follow your organization's browser policies. These are not browser-store packages.
 
-The default pace is **0.2 seconds**, adjustable down to 0.1 seconds.
+## Use
 
-- Reads plain text in section order, including long/nested readers and revealed text.
-- Opens supported tabs/reveals without cycling endlessly through rerendered controls.
-- **Skip videos:** activates lazy Play overlays and seeks to the last moment of native
-  videos, letting the real ended event run. Disable the option for full playback.
-- **Open documents:** visits PDF/Office/text links and native **description/instructions**
-  buttons, waits for the temporary tab to load, closes it, and returns to the course.
-- Retries only unfinished activities once. Unconfirmed items stay listed as pending.
-- Uses NetAcad's completion indicators, not invented completion records.
+Open the **NetAcad Companion** panel at the bottom right of your course.
 
-> **Starting the checklist permits supported self-check submissions in Easy mode.**
-> It does not enable Brutal mode. Mode changes are disabled while a checklist runs.
+- **Easy** is the default. Highlights available answers; **Select answers** selects
+  them. Review and submit yourself.
+- **Brutal** selects and submits supported answers automatically. Switching to this
+  mode can submit the current question immediately.
 
-Graded quizzes/exams, external exercises, projects, and locked activities remain
-manual. Opening a lab's instruction PDF does **not** perform the lab. Unsupported
-controls, restricted players, cross-origin content, and missing answer data can
-also require manual work. Video transcripts/player settings are not clicked by
-the generic activity pass. A reading topic being visited does not prove that its
-graded quiz is finished.
+Shortcuts: `Ctrl+Shift+Y` selects answers, `Ctrl+Shift+H` toggles highlights,
+and `Ctrl+Shift+M` changes modes. `Escape` closes the panel.
 
-**Stop closes only the document tab tracked for the current visit.** It does not
-cancel downloads already started by your browser. Changing course pages or closing
-the course cancels the current run. Your authentication is handled by NetAcad;
-the extension does not provide a login service.
+### Chapter checklist
 
-## Build and check
+1. Keep the course outline visible and choose Easy mode.
+2. Open **Chapter checklist**, select chapters and press **Start**.
+3. Keep the course tab open. Use **Stop** to cancel.
 
-Use Node.js **22.18+ (22.x)** or **24.11+** and npm.
+The default step delay is 0.2 seconds. The checklist reads text in section order,
+opens supported reveals and tabs, skips native videos, and visits documents before
+returning to the course. Unconfirmed activities receive one retry and remain listed
+as pending. Video transcripts are not part of the generic button-clicking pass.
+
+Starting a checklist permits supported self-check submissions in Easy mode.
+Graded exams, unsupported activities and locked content remain manual. Reading a
+topic or opening a lab's instructions does not complete its graded quiz or lab.
+Completion is checked against NetAcad's indicators; the extension does not fabricate records.
+
+## Build and test
+
+Requires Node.js 22.18+ (22.x) or 24.11+ and npm.
 
 ```sh
 npm ci
-npm run build             # Chromium build: dist/
-npm run build:firefox     # Firefox build: dist-firefox/
-npm run package           # Release archives: release/
-npm test                  # Solver logic/stress checks
-npm run test:browser      # Real Chromium regression checks
-npm run test:documents    # Document ownership and cleanup checks
-npm run test:packages     # Archive contents, manifests and CRC checks
+npm run build
+npm run build:firefox
+npm run package
+npm test
+npm run test:browser
+npm run test:documents
+npm run test:packages
 ```
 
-Browser tests need [Playwright](https://playwright.dev/) and its Chromium browser
-available locally. They otherwise skip with a message. Build folders, release
-archives, screenshots, browser sessions, and machine-specific diagnostic scripts
-are not committed.
+Browser tests require Playwright and Chromium; otherwise they skip with a message.
+Generated packages, screenshots and local browser diagnostics are not committed.
 
-## Credits and limitations
+## Attribution
 
-**Primary inspiration and original solver foundation:**
-[ingui-n/netacad-solver](https://github.com/ingui-n/netacad-solver).
-Please visit and support the original project. Attribution is not a substitute
-for a license: upstream declares no license, and this repository does not relicense
-its code. See **[NOTICE.md](NOTICE.md)**.
+Primary source: [ingui-n/netacad-solver](https://github.com/ingui-n/netacad-solver).
+Upstream declares no license; this repository does not relicense its code.
+See [NOTICE.md](NOTICE.md) for attribution and dependency licensing.
 
-Public course-navigation research also used
-[NetAIcad](https://github.com/misterzaidxpy/NetAIcad) and
-[netacad-automation](https://github.com/yadavsaurabh1/netacad-automation).
-The checklist targets the English, numbered Course Outline and readable course
-frames; it is not an official Cisco completion API.
+Course-navigation research also used [NetAIcad](https://github.com/misterzaidxpy/NetAIcad)
+and [netacad-automation](https://github.com/yadavsaurabh1/netacad-automation).
+The checklist targets the English, numbered course outline and readable frames;
+compatibility varies by course.
 
-Live Chrome testing confirmed Module 13 reading/document completion indicators
-at **95%**, with the graded module quiz left manual. This is a compatibility
-observation, not a guarantee for every course or renderer.
-
-**[Changelog](CHANGELOG.md) · [Report an issue](https://github.com/kuy124/meowcad-solver/issues)**
+[Changelog](CHANGELOG.md) | [Issues](https://github.com/kuy124/netacad-companion/issues)

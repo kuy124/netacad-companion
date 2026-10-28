@@ -1,6 +1,13 @@
 # Changelog
 
-## [0.1.0] — First MeowCad release
+## [0.1.1] - Naming and documentation
+
+### Changed
+- Renamed the project, extension UI and repository to NetAcad Companion.
+- Removed emojis and shortened the documentation and release notes.
+- Kept existing preferences and extension identifiers for compatibility.
+
+## [0.1.0] - Initial release
 
 ### Added
 - NetAcad-styled Easy/Brutal controls and keyboard shortcuts.
@@ -21,4 +28,5 @@
 - Heavily based on and inspired by [ingui-n/netacad-solver](https://github.com/ingui-n/netacad-solver);
   original solver credit belongs to the upstream project. See [NOTICE.md](NOTICE.md).
 
-[0.1.0]: https://github.com/kuy124/meowcad-solver/releases/tag/v0.1.0
+[0.1.1]: https://github.com/kuy124/netacad-companion/releases/tag/v0.1.1
+[0.1.0]: https://github.com/kuy124/netacad-companion/releases/tag/v0.1.0
