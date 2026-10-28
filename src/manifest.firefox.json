@@ -1,0 +1,71 @@
+{
+  "manifest_version": 3,
+  "name": "MeowCad Solver",
+  "description": "NetAcad answer highlights and paced chapter checklists, with video skipping and document visits.",
+  "version": "0.1.0",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "meowcad-solver@kuy124.github.io",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "permissions": [
+    "webRequest",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*.netacad.com/*"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "commands": {
+    "solve-current-question": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y"
+      },
+      "description": "Highlight the correct answer(s) for the current NetAcad question"
+    },
+    "toggle-highlights": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+H"
+      },
+      "description": "Show or hide the highlighted correct answers"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.netacad.com/*"],
+      "js": ["intercept.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": ["https://*.netacad.com/*"],
+      "js": ["catcher.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": true
+    },
+    {
+      "matches": ["https://*.netacad.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": true
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+.idea
+.prod
+
+node_modules
+dist
+dist-firefox
+release
+
+# Local debugging and inherited, unused assets are not publication inputs.
+/assets/
+cybersecurity-essentials/
+test/live-*
+src/manifest-v2.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+*.log
+.env
+.env.*
