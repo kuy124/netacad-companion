@@ -12,8 +12,8 @@ to that project. This is an independently maintained derivative, not a Cisco pro
 
 | Browser | File |
 | --- | --- |
-| Chrome, Edge, Brave, Vivaldi | `netacad-companion-v0.1.1-chromium.zip` |
-| Firefox 128+ | `netacad-companion-v0.1.1-firefox.xpi` |
+| Chrome, Edge, Brave, Vivaldi | `netacad-companion-v0.1.2-chromium.zip` |
+| Firefox 128+ | `netacad-companion-v0.1.2-firefox.xpi` |
 
 For Chromium browsers, extract the ZIP, open `chrome://extensions`, enable Developer
 mode and choose **Load unpacked**. Select the folder containing `manifest.json`.
@@ -27,6 +27,8 @@ Follow your organization's browser policies. These are not browser-store package
 ## Use
 
 Open the **NetAcad Companion** panel at the bottom right of your course.
+Drag the panel header or compact control to move it away from Submit. You can also
+focus the header and use arrow keys to move it; `Home` resets its position.
 
 - **Easy** is the default. Highlights available answers; **Select answers** selects
   them. Review and submit yourself.
@@ -46,6 +48,10 @@ The default step delay is 0.2 seconds. The checklist reads text in section order
 opens supported reveals and tabs, skips native videos, and visits documents before
 returning to the course. Unconfirmed activities receive one retry and remain listed
 as pending. Video transcripts are not part of the generic button-clicking pass.
+**Select answers** and `Ctrl+Shift+Y` remain available during a checklist; they
+only select answers, never submit. Mode switching stays locked until the run ends.
+The checklist does not click quiz or self-check **Start** buttons. Start those
+activities yourself, then use **Select answers** or `Ctrl+Shift+Y`.
 
 Starting a checklist permits supported self-check submissions in Easy mode.
 Graded exams, unsupported activities and locked content remain manual. Reading a

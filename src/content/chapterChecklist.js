@@ -87,6 +87,8 @@ const scrollTo = async (element, block, signal, pace) => {
 
 const ACTIVITY_SELECTOR = '.component, .adaptive-start-screen__widget';
 const parentElement = element => element.parentElement || element.getRootNode().host;
+const findAssessmentStart = scope => deepHtmlSearchAll(scope, 'button, [role="button"], a').find(element =>
+  rendered(element) && /^(start|begin)(?: (?:quiz|assessment|activity|check))?$/i.test(text(element)));
 const activityFor = element => {
   let activity;
   for (let node = element; node; node = parentElement(node))
@@ -189,6 +191,14 @@ const walkTopic = async (topic, currentTopic, controls, controller, pace, solve,
   const attempted = new Set();
   const errors = new Map();
   const documents = new Set();
+  const fallbackIds = new WeakMap();
+  let nextActivityId = 0;
+  const activityKey = element => {
+    const nativeId = element.id || String(element.className).match(/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/i)?.[0];
+    if (nativeId) return nativeId;
+    if (!fallbackIds.has(element)) fallbackIds.set(element, `component:${nextActivityId++}`);
+    return fallbackIds.get(element);
+  };
   let pass = 1;
   let activeKey;
   let lastProgress = '';
@@ -214,13 +224,12 @@ const walkTopic = async (topic, currentTopic, controls, controller, pace, solve,
 
     const activities = nodes.filter(element => element.matches(ACTIVITY_SELECTOR)
       && activityFor(element) === element);
-    const pending = (activities.length ? activities : [doc.body]).map((element, index) => ({
+    const pending = (activities.length ? activities : [doc.body]).map(element => ({
       element,
       // Identical prose can occur in separate sections; text is not an identity.
-      key: element.id || String(element.className).match(/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/i)?.[0] || index,
+      key: activityKey(element),
     })).filter(({ element }) => rendered(element) && (!element.classList.contains('is-complete')
-      || deepHtmlSearchAll(element, '.adaptive-start-screen__widget .start-button[role="button"]').some(button =>
-        rendered(button) && /check your understanding/i.test(text(button.closest('.adaptive-start-screen__widget'))))));
+      || findAssessmentStart(element)));
     const current = pending.find(item => !attempted.has(item.key));
     if (!current) {
       // Give native progress time to settle, then revisit only unfinished content once.
@@ -328,19 +337,8 @@ const walkTopic = async (topic, currentTopic, controls, controller, pace, solve,
       continue;
     }
 
-    // Launch only an explicitly named, ungraded CYU widget, not generic Start buttons.
-    const start = deepHtmlSearchAll(scope, '.adaptive-start-screen__widget .start-button[role="button"]').find(element =>
-      !visited.has(controlKey(element)) && rendered(element) && !element.classList.contains('is-disabled')
-      && /check your understanding/i.test(text(element.closest('.adaptive-start-screen__widget'))));
-    if (start) {
-      visited.add(controlKey(start));
-      await scrollTo(start, 'center', signal, pace);
-      guard();
-      start.click();
-      await delay(pace, signal);
-      advance();
-      continue;
-    }
+    if (findAssessmentStart(scope))
+      throw new Error('Start this self-check yourself, then use Select answers. The checklist did not start it.');
 
     const action = deepHtmlSearchAll(scope, actions).find(element => !visited.has(controlKey(element))
       && rendered(element) && !element.disabled && element.getAttribute('aria-disabled') !== 'true'

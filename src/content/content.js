@@ -9,6 +9,7 @@ import {
 import { mountChapterChecklist } from "./chapterChecklist";
 
 let isSuspendRunning = false;
+let suspendTask = Promise.resolve();
 const components = [];
 let questions = [];
 const componentUrls = [];
@@ -309,7 +310,8 @@ const updateModeBadge = () => {
   }
 
   const checklistRunning = Boolean(controls.dataset.checklistRunning);
-  controls.querySelectorAll('button[data-mode], .solver-select').forEach(button => { button.disabled = checklistRunning; });
+  controls.querySelectorAll('button[data-mode]').forEach(button => { button.disabled = checklistRunning; });
+  controls.querySelectorAll('.solver-select').forEach(button => { button.disabled = false; });
   const statusKey = `${mode}:${checklistRunning}`;
   if (controls.dataset.status !== statusKey) {
     controls.dataset.status = statusKey;
@@ -320,6 +322,69 @@ const updateModeBadge = () => {
   }
 
   controls.querySelector('#netacad-solver-highlights').checked = highlightsVisible;
+};
+
+const makeControlsDraggable = controls => {
+  const summary = controls.querySelector(':scope > summary');
+  const panel = controls.querySelector('.solver-panel');
+  const header = controls.querySelector('.solver-panel-header');
+  let drag = null;
+  let moved = false;
+  let positioned = false;
+  const position = (right, bottom) => {
+    const width = Math.max(controls.offsetWidth, controls.open ? panel.offsetWidth : 0);
+    const height = controls.offsetHeight + (controls.open ? panel.offsetHeight + 8 : 0);
+    controls.style.right = `${Math.max(12, Math.min(right, innerWidth - width - 12))}px`;
+    controls.style.bottom = `${Math.max(12, Math.min(bottom, innerHeight - height - 12))}px`;
+    positioned = true;
+  };
+  const fit = () => {
+    if (!positioned || !controls.isConnected) return;
+    const rect = controls.getBoundingClientRect();
+    position(innerWidth - rect.right, innerHeight - rect.bottom);
+  };
+  for (const handle of [summary, header]) {
+    handle.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || !event.isPrimary || event.target.closest('button, input, a')) return;
+      const rect = controls.getBoundingClientRect();
+      drag = { id: event.pointerId, x: event.clientX, y: event.clientY,
+        right: innerWidth - rect.right, bottom: innerHeight - rect.bottom };
+      moved = false;
+      handle.setPointerCapture(event.pointerId);
+    });
+    handle.addEventListener('pointermove', event => {
+      if (!drag || drag.id !== event.pointerId) return;
+      const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+      if (!moved && Math.hypot(dx, dy) < 5) return;
+      moved = true;
+      event.preventDefault();
+      position(drag.right - dx, drag.bottom - dy);
+    });
+    const endDrag = () => { drag = null; setTimeout(() => { moved = false; }, 0); };
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+    handle.addEventListener('click', event => {
+      if (moved) { event.preventDefault(); event.stopPropagation(); }
+    }, true);
+  }
+  header.addEventListener('keydown', event => {
+    if (event.target !== header) return;
+    if (event.key === 'Home') {
+      event.preventDefault();
+      controls.style.removeProperty('right');
+      controls.style.removeProperty('bottom');
+      positioned = false;
+    } else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const rect = controls.getBoundingClientRect();
+      const step = event.shiftKey ? 60 : 20;
+      position(innerWidth - rect.right + (event.key === 'ArrowLeft' ? step : event.key === 'ArrowRight' ? -step : 0),
+        innerHeight - rect.bottom + (event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0));
+    }
+  });
+  controls.addEventListener('toggle', fit);
+  window.addEventListener('resize', fit);
+  if (globalThis.ResizeObserver) new ResizeObserver(fit).observe(panel);
 };
 
 // Native disclosure keeps the status compact and provides keyboard interaction.
@@ -348,7 +413,7 @@ const ensureModeBadge = () => {
           #${MODE_CONTROLS_ID} > summary {
             display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 12px; list-style: none;
             border: 1px solid #d4dadd; border-bottom: 3px solid #6abf4b; border-radius: 4px; background: #fff;
-            box-shadow: 0 2px 8px #172d3d14; cursor: pointer; user-select: none;
+            box-shadow: 0 2px 8px #172d3d14; cursor: grab;
           }
           #${MODE_CONTROLS_ID} > summary::-webkit-details-marker { display: none; }
           #${MODE_CONTROLS_ID} > summary:hover, #${MODE_CONTROLS_ID}[open] > summary { background: #f5f9f2; border-color: #6abf4b; }
@@ -371,6 +436,11 @@ const ensureModeBadge = () => {
             padding: 14px 18px; border-bottom: 1px solid #e3e7e9;
           }
           #${MODE_CONTROLS_ID} .solver-panel-header strong { font-size: 16px; }
+          #${MODE_CONTROLS_ID} > summary, #${MODE_CONTROLS_ID} > summary *,
+          #${MODE_CONTROLS_ID} .solver-panel-header, #${MODE_CONTROLS_ID} .solver-panel-header * {
+            user-select: none !important; touch-action: none;
+          }
+          #${MODE_CONTROLS_ID} .solver-panel-header { cursor: grab; }
           #${MODE_CONTROLS_ID} .solver-mode-status { display: flex; align-items: center; gap: 6px; margin-top: 3px; color: #5b666e; font-size: 12px; }
           #${MODE_CONTROLS_ID} .solver-mode-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--solver-accent); }
           #${MODE_CONTROLS_ID} .solver-section { padding: 16px 18px; }
@@ -436,14 +506,14 @@ const ensureModeBadge = () => {
             #${MODE_CONTROLS_ID} input::before { display: none; }
           }
         </style>
-        <summary title="Open controls" aria-label="NetAcad Companion controls">
+        <summary title="Click to open controls. Drag to move." aria-label="NetAcad Companion controls">
           <svg class="solver-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1m0-15c3-2 6-2 9-1v15c-3-1-6-1-9 1V5Z"/></svg>
           <strong class="solver-summary-copy">NetAcad Companion</strong>
           <span id="${MODE_BADGE_ID}" role="status"></span>
           <svg class="solver-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 10 4-4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </summary>
         <section class="solver-panel" aria-label="Solver settings">
-          <header class="solver-panel-header">
+          <header class="solver-panel-header" tabindex="0" aria-label="Move panel" title="Drag to move. Arrow keys move; Home resets." aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Home">
             <div><strong>NetAcad Companion</strong><span class="solver-mode-status"></span></div>
             <button type="button" class="solver-close" aria-label="Close solver settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
           </header>
@@ -493,6 +563,7 @@ const ensureModeBadge = () => {
         }
       });
       document.body.appendChild(controls);
+      makeControlsDraggable(controls);
       mountChapterChecklist(controls, (document, signal, scope) => suspendMain({ document, signal, scope }), updateModeBadge);
     }
 
@@ -879,7 +950,7 @@ const highlightBasicAnswers = question => {
     return;
 
   for (let index = 0; index < question.inputs.length; index++) {
-    if (!component._items[index]?._shouldBeSelected)
+    if (!(component._items[index]?._shouldBeSelected ?? component._items[index]?._isCorrect))
       continue;
 
     const {input, label} = getBasicAnswerInput(question, component, index);
@@ -967,7 +1038,7 @@ const selectBasicAnswers = question => {
   let selected = 0;
 
   for (let index = 0; index < question.inputs.length; index++) {
-    if (!component._items[index]?._shouldBeSelected)
+    if (!(component._items[index]?._shouldBeSelected ?? component._items[index]?._isCorrect))
       continue;
 
     const {input, label} = getBasicAnswerInput(question, component, index);
@@ -1157,19 +1228,23 @@ const main = async checklist => {
   ensureModeBadge();
 
   const tabControls = getTabControls();
-  if (!checklist && tabControls?.dataset.checklistRunning)
+  const checklistRunning = Boolean(tabControls?.dataset.checklistRunning);
+  if (!checklist && checklistRunning && !solveRequested)
     return;
 
-  if (checklist) {
+  const guardChecklist = () => {
+    if (!checklist) return true;
     checklist.signal.throwIfAborted();
     if (checklist.document.title !== checklistTitle)
-      return;
-    // Graded question counters are not chapter self-checks.
-    const roots = [checklist.document.body, ...deepHtmlSearchAll(checklist.document, '*').map(element => element.shadowRoot)];
+      return false;
+    // Only a CYU started by this checklist may use an assessment-style counter.
+    const roots = [...deepHtmlSearchAll(checklist.document, 'body'), ...deepHtmlSearchAll(checklist.document, '*').map(element => element.shadowRoot)];
     if (roots.some(root => root &&
       /\d+\s*of\s*\d+\s*questions?/.test(normalizeElementText(root.textContent))))
       throw new Error('An assessment is open. Complete it manually; the checklist did not submit it.');
-  }
+    return true;
+  };
+  if (!guardChecklist()) return;
 
   questions = [];
   const isAtLeaseOneSet = await setQuestionSections();
@@ -1187,14 +1262,15 @@ const main = async checklist => {
   setQuestionElements();
 
   if (checklist) {
-    if (checklist.signal.aborted || checklist.document.title !== checklistTitle)
-      return;
+    if (!guardChecklist()) return;
     const allowed = checklist.scope && new Set(deepHtmlSearchAll(checklist.scope, '*'));
-    questions = questions.filter(question => question.questionDiv?.ownerDocument === checklist.document
-      && (!allowed || allowed.has(question.questionDiv)));
+    questions = questions.filter(question => allowed
+      ? [question.questionDiv, question.questionElement, ...(question.inputs || []).flat()].some(element => allowed.has(element))
+      : question.questionDiv?.ownerDocument === checklist.document);
     highlightVisibleQuestions();
     autoSolveVisibleQuestions();
     for (const question of questions) {
+      if (!guardChecklist()) return;
       if (question.questionDiv.isConnected && autoSolvedQuestions.has(question.questionDiv))
         submitAnswers(question.questionDiv, true);
     }
@@ -1202,6 +1278,12 @@ const main = async checklist => {
   }
 
   highlightVisibleQuestions();
+
+  if (checklistRunning) {
+    // An explicit user solve stays available, but never becomes a Brutal submit.
+    if (solveRequested) { solveRequested = false; autoSolveVisibleQuestions(); }
+    return;
+  }
 
   if ((tabControls?.dataset.mode || mode) === 'brutal') {
     // Brutal: solve and submit on every run, no hotkey needed. The
@@ -1249,15 +1331,23 @@ const scheduleSolveRetry = (attempt = 1) => {
   }, 250);
 };
 
-const suspendMain = checklist => {
+const suspendMain = async checklist => {
+  const requestedTitle = checklist?.document.title;
   if (isSuspendRunning) {
+    if (checklist) {
+      await suspendTask.catch(() => {});
+      checklist.signal.throwIfAborted();
+      if (checklist.document.title === requestedTitle)
+        return suspendMain(checklist);
+      return;
+    }
     isQuestionRefreshPending = true;
     return;
   }
 
   isSuspendRunning = true;
 
-  return main(checklist)
+  suspendTask = main(checklist)
     .catch(e => {
       if (checklist)
         throw e;
@@ -1272,6 +1362,7 @@ const suspendMain = checklist => {
         queueQuestionRefresh();
       }
     });
+  return suspendTask;
 };
 
 const observedQuestionScopes = new WeakSet();
@@ -1353,8 +1444,6 @@ let solveRequested = false;
 // handler and once from the manifest command routed through the background
 // script. Collapse both into a single solve.
 const requestSolve = () => {
-  if (getTabControls()?.dataset.checklistRunning)
-    return;
   const now = Date.now();
 
   if (now - lastSolveAt < SOLVE_DEBOUNCE)

@@ -86,8 +86,8 @@ const COMPONENTS = [
   {
     _id: 'q1', _component: 'mcq', body: '<p>Which is a phishing example?</p>',
     _items: [
-      { text: '<p>A fake login email</p>', _shouldBeSelected: true },
-      { text: '<p>A patched firewall</p>', _shouldBeSelected: false },
+      { text: '<p>A fake login email</p>', _isCorrect: true },
+      { text: '<p>A patched firewall</p>', _isCorrect: false },
     ],
   },
   {
@@ -334,6 +334,52 @@ async function main() {
         && box.x + box.width <= size.width && box.y + box.height <= size.height));
   }
   await ui.setViewportSize({ width: 1280, height: 800 });
+  await ui.evaluate(() => {
+    const submit = document.createElement('button');
+    submit.id = 'covered-submit';
+    submit.textContent = 'Submit activity';
+    submit.style.cssText = 'position:fixed;right:40px;bottom:100px;padding:15px';
+    submit.onclick = () => { window.__manualSubmitClicks = (window.__manualSubmitClicks || 0) + 1; };
+    document.body.append(submit);
+  });
+  const header = controls.locator('.solver-panel-header');
+  check('panel initially covers the course submission area', await ui.evaluate(() => {
+    const rect = document.getElementById('covered-submit').getBoundingClientRect();
+    return document.getElementById('netacad-solver-controls').contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+  }));
+  const initialHeader = await header.boundingBox();
+  await ui.mouse.move(initialHeader.x + 80, initialHeader.y + 25);
+  await ui.mouse.down();
+  await ui.mouse.move(initialHeader.x - 350, initialHeader.y + 25, { steps: 8 });
+  await ui.mouse.up();
+  check('header dragging moves the whole panel without closing it',
+    await controls.evaluate(el => el.open) && (await header.boundingBox()).x < initialHeader.x - 300);
+  await ui.locator('#covered-submit').click();
+  check('moving the panel makes manual submission accessible', await ui.evaluate(() => window.__manualSubmitClicks === 1));
+  await summary.click();
+  await header.focus();
+  const beforeArrow = await header.boundingBox();
+  await ui.keyboard.press('ArrowLeft');
+  check('panel can be moved with the keyboard', (await header.boundingBox()).x <= beforeArrow.x - 19);
+  await ui.setViewportSize({ width: 360, height: 240 });
+  await ui.waitForTimeout(100);
+  check('a moved panel stays reachable after resizing', (await header.boundingBox()).x >= 0
+    && (await header.boundingBox()).y >= 0 && (await controls.boundingBox()).y < 240);
+  await ui.setViewportSize({ width: 1280, height: 800 });
+  await header.focus();
+  await ui.keyboard.press('Home');
+  check('Home restores the default panel position', await controls.evaluate(el => !el.style.right && !el.style.bottom));
+  await ui.keyboard.press('Escape');
+  const collapsed = await summary.boundingBox();
+  await ui.mouse.move(collapsed.x + 80, collapsed.y + 24);
+  await ui.mouse.down();
+  await ui.mouse.move(collapsed.x - 150, collapsed.y - 30, { steps: 6 });
+  await ui.mouse.up();
+  check('dragging the compact control does not toggle it open', await controls.evaluate(el => !el.open)
+    && (await summary.boundingBox()).x < collapsed.x - 100);
+  await summary.click();
+  await header.focus();
+  await ui.keyboard.press('Home');
   await ui.mouse.click(700, 500);
   check('outside click collapses settings', await controls.evaluate(el => !el.open));
   await summary.click();
@@ -407,6 +453,39 @@ async function main() {
     await remote.locator('#netacad-solver-controls').count() === 0
       && await framed.locator('#netacad-solver-controls').count() === 1);
   await framed.close();
+
+  console.log('\n== Manual solver remains available during a checklist ==');
+  const manual = await boot(browser, 'brutal');
+  await manual.waitForTimeout(800);
+  const resetManualQuestion = () => {
+    const controls = document.getElementById('netacad-solver-controls');
+    controls.dataset.checklistRunning = 'true';
+    const previous = document.querySelector('.q1');
+    const next = previous.cloneNode(true);
+    next.querySelectorAll('input').forEach(input => { input.checked = false; });
+    previous.replaceWith(next);
+    window.__clicks = [];
+  };
+  await manual.evaluate(resetManualQuestion);
+  await manual.evaluate(press('h')); // Refresh the controls without asking to solve.
+  await manual.waitForTimeout(700);
+  check('checklist still blocks idle Brutal solving', (await snapshot(manual)).correct === false);
+  const manualControls = manual.locator('#netacad-solver-controls');
+  check('Select answers stays enabled while mode changes stay locked',
+    await manualControls.locator('.solver-select').isEnabled()
+      && await manualControls.locator('button[data-mode="brutal"]').isDisabled());
+  await manualControls.evaluate(element => { element.open = true; });
+  await manualControls.locator('.solver-select').click();
+  await manual.waitForFunction(() => document.getElementById('q1-0-input').checked);
+  check('manual button selects without submitting during a checklist',
+    !(await snapshot(manual)).clickList.includes('submit'));
+  await manual.waitForTimeout(450); // A separate press, outside the shared hotkey debounce.
+  await manual.evaluate(resetManualQuestion);
+  await manual.evaluate(press('y'));
+  await manual.waitForFunction(() => document.getElementById('q1-0-input').checked);
+  check('manual hotkey also selects without submitting during a checklist',
+    !(await snapshot(manual)).clickList.includes('submit'));
+  await manual.close();
 
   console.log('\n== Chapter checklist: native activities, verified progress and cancellation ==');
   const course = await boot(browser);
@@ -490,22 +569,46 @@ async function main() {
             <input type="checkbox" id="q1-0-input"><label id="q1-0-label" for="q1-0-input">A fake login email</label>
             <input type="checkbox" id="q1-1-input"><label id="q1-1-label" for="q1-1-input">A patched firewall</label>
             <button id="chapter-submit">Submit</button></section>`;
-          root.querySelector('#chapter-submit').onclick = () => {
-            const correct = root.querySelector('#q1-0-input').checked && !root.querySelector('#q1-1-input').checked;
+          root.querySelector('#chapter-submit').onclick = event => {
+            const question = event.currentTarget.parentElement;
+            const correct = question.querySelector('#q1-0-input').checked && !question.querySelector('#q1-1-input').checked;
             window.__chapterSubmits.push({ key, correct });
             if (correct) finish(button);
           };
           if (key === '12.2') {
             const question = root.querySelector('.q1');
             question.hidden = true;
+            const container = doc.createElement('assessment-block-strip-view');
+            container.style.display = 'block';
             const intro = doc.createElement('div');
-            intro.className = 'adaptive-start-screen__widget';
+            intro.className = 'component is-complete adaptive-start-screen__widget';
             intro.innerHTML = '<h2>12.2 Check Your Understanding</h2><div class="start-button start" role="button" tabindex="0">Start</div>';
-            root.prepend(intro);
+            container.append(intro);
+            root.prepend(container);
             intro.querySelector('.start-button').onclick = () => {
               window.__chapterLaunches++;
-              intro.hidden = true;
-              question.hidden = false;
+              const get = window.chrome.storage.local.get;
+              let delayed = false;
+              window.chrome.storage.local.get = (key, callback) => {
+                if (typeof key === 'string' && !delayed) {
+                  delayed = true;
+                  window.chrome.storage.local.get = get;
+                  setTimeout(() => get(key, callback), 2200);
+                } else get(key, callback);
+              };
+              window.__listeners.forEach(fn => fn({ componentsUrl:
+                `https://www.netacad.com/content/checklist-loading/components.json?launch=${window.__chapterLaunches}` }));
+              setTimeout(() => {
+                intro.remove();
+                const assessment = doc.createElement('iframe');
+                assessment.style.cssText = 'width:100%;height:360px;border:0';
+                container.append(assessment);
+                const target = assessment.contentDocument;
+                target.title = 'Self-check content';
+                target.body.innerHTML = '<div>1 of 2 Questions</div><style>label{display:block;padding:8px}</style>';
+                target.body.append(question);
+                question.hidden = false;
+              }, 100);
             };
           }
         }
@@ -564,7 +667,7 @@ async function main() {
   check('running state remains visible in the compact menu',
     await chapterControls.locator('.solver-checklist-running').isVisible()
       && (await chapterControls.locator(':scope > summary').getAttribute('aria-label')).includes('chapter checklist running'));
-  await course.waitForFunction(() => document.querySelector('.solver-checklist-status').textContent.startsWith('3/7 topics verified'),
+  await course.waitForFunction(() => document.querySelector('.solver-checklist-status').textContent.startsWith('2/7 topics verified'),
     undefined, { timeout: 20000 }).catch(async error => {
       console.error('Chapter diagnostic:', JSON.stringify(await course.evaluate(() => ({
         status: document.querySelector('.solver-checklist-status').textContent,
@@ -576,12 +679,13 @@ async function main() {
     });
   check('only visits unfinished, unlocked topics in the selected chapter',
     await course.evaluate(() => JSON.stringify(window.__chapterOpens) === JSON.stringify(['12.1', '12.2', '12.6'])));
-  check('uses the existing solver for self-checks and submits once', await course.evaluate(() =>
-    window.__chapterSubmits.length === 1 && window.__chapterSubmits[0].key === '12.2' && window.__chapterSubmits[0].correct));
+  check('leaves Start screens untouched and reports them for manual action', await course.evaluate(() =>
+    window.__chapterLaunches === 0 && window.__chapterSubmits.length === 0
+      && document.querySelector('.solver-checklist-issues').textContent.includes('Start this self-check yourself')));
   check('verifies NetAcad progress rather than faking completion', await chapterControls.locator('progress').evaluate(el =>
-    el.value === 3 && el.max === 7));
+    el.value === 2 && el.max === 7));
   check('reports quizzes, labs, locked topics and embedded assessments as needing attention',
-    await chapterControls.locator('.solver-checklist-issues li').count() === 4);
+    await chapterControls.locator('.solver-checklist-issues li').count() === 5);
   await course.waitForTimeout(700);
   check('iframe solvers honor the tab mode and cannot bypass the checklist', await reader.evaluate(() =>
     !document.querySelector('reader-view').shadowRoot.querySelector('#q1-0-input').checked));
@@ -613,9 +717,24 @@ async function main() {
     undefined, { timeout: 5000 });
   check('manual course navigation cancels the chapter run', await course.evaluate(() =>
     window.__chapterOpens.length === 5 && !document.querySelector('#netacad-solver-controls').dataset.checklistRunning));
-  check('launches the role-button self-check exactly once', await course.evaluate(() => window.__chapterLaunches === 1));
+  check('checklist retries never click the quiz Start button', await course.evaluate(() => window.__chapterLaunches === 0));
   check('never revisits overlapping base/block wrappers', await course.evaluate(() =>
     !window.__chapterScrollTags.some(tag => tag === 'BASE-VIEW' || tag === 'BLOCK-VIEW')));
+  await course.locator('[data-topic="12.2"]').click();
+  await course.frameLocator('#checklist-course').getByRole('button', { name: 'Start', exact: true }).click();
+  await chapterControls.locator(':scope > summary').click();
+  await chapterControls.getByRole('button', { name: 'Select answers', exact: true }).click();
+  const firstQuestion = course.frameLocator('#checklist-course').frameLocator('iframe');
+  await firstQuestion.locator('#q1-0-input').waitFor();
+  await course.waitForFunction(() => document.querySelector('#checklist-course').contentDocument
+    .querySelector('reader-view').shadowRoot.querySelector('iframe').contentDocument.querySelector('#q1-0-input').checked,
+  undefined, { timeout: 8000 });
+  check('first question solves after a manual Start, before any submission', await course.evaluate(() =>
+    window.__chapterLaunches === 1 && window.__chapterSubmits.length === 0)
+      && !await firstQuestion.locator('#q1-1-input').isChecked());
+  await firstQuestion.locator('#chapter-submit').click();
+  check('the user can submit that first question normally', await course.evaluate(() =>
+    window.__chapterSubmits.length === 1 && window.__chapterSubmits[0].correct));
   await course.close();
 
   console.log('\n== Ordered reading, nested scrolling and bounded rechecks ==');
