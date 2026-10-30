@@ -1076,6 +1076,407 @@ async function main() {
   await smart.close();
   await smartContext.close();
 
+  console.log('\n== Embedded lab reveals and animation timelines ==');
+  const labs = await boot(browser);
+  await labs.evaluate(() => {
+    for (const child of [...document.body.children]) if (child.id !== 'netacad-solver-controls') child.remove();
+    const outline = document.createElement('aside');
+    const titles = ['Lab - Embedded reveals', 'Animations - Native timeline', 'Animation - Seek bar',
+      'Animation - Accessible slider', 'Animation - Skip control', 'Lab - Hands-on task',
+      'Lab - Embedded self-check', 'Graded Lab'];
+    outline.innerHTML = '<button class="nodeInfoContainer--fixture" aria-expanded="true">Module 13: Labs</button>'
+      + titles.map((title, index) => `<button class="subModuleBtn--fixture" data-topic="13.${index + 1}">13.${index + 1}. ${title}<span class="subModuleStatus--fixture"><img alt="start"></span></button>`).join('');
+    const frame = document.createElement('iframe');
+    frame.style.cssText = 'width:700px;height:430px;border:1px solid #ccc';
+    document.body.prepend(outline, frame);
+    window.__labEvents = [];
+    window.__animationFinishes = [];
+    window.__timelineEvents = [];
+    window.__sliderEvents = [];
+    window.__rangeWrites = window.__labStarts = window.__handsOnNext = window.__handsOnReveals = window.__gradedLabVisits = 0;
+    const nativeNow = performance.now.bind(performance);
+    let timeOffset = 0;
+    performance.now = () => nativeNow() + timeOffset;
+    for (const button of outline.querySelectorAll('[data-topic]')) button.onclick = () => {
+      const doc = frame.contentDocument;
+      doc.title = `Course | ${button.textContent}`;
+      doc.body.innerHTML = '<style>.component{padding:12px;min-height:180px}button{padding:10px}#visual{height:50px;background:green}</style><section class="component"><h2 class="js-heading"></h2></section>';
+      const scope = doc.querySelector('.component');
+      scope.querySelector('h2').textContent = button.textContent;
+      const finish = () => {
+        scope.classList.add('is-complete');
+        scope.querySelector('.js-heading').classList.add('is-complete');
+        button.querySelector('img').alt = 'completed';
+      };
+      const key = button.dataset.topic;
+      if (key === '13.1') {
+        scope.insertAdjacentHTML('beforeend', '<aside hidden><h2>Graded lab</h2><p>1 of 2 Questions</p><textarea></textarea></aside><button>Launch interactive lab</button>');
+        scope.querySelector('button').onclick = event => {
+          window.__labEvents.push('launch');
+          event.currentTarget.remove();
+          const inner = doc.createElement('iframe');
+          inner.style.cssText = 'width:600px;height:250px';
+          inner.onload = () => setTimeout(() => {
+            const child = inner.contentDocument;
+            const root = child.querySelector('reader-lab').attachShadow({ mode: 'open' });
+            const render = step => {
+              root.innerHTML = `<h3>Task ${step + 1} of 3</h3><button id="next">Next task</button><button id="reveal">Show answer</button><p id="answer" hidden>Explanation ${step + 1}</p>`;
+              let revealed = false;
+              root.querySelector('#reveal').onclick = event => {
+                revealed = true;
+                window.__labEvents.push(`reveal:${step}`);
+                root.querySelector('#answer').hidden = false;
+                event.currentTarget.setAttribute('aria-expanded', 'true');
+                if (step === 1) {
+                  const popup = doc.createElement('dialog');
+                  popup.innerHTML = '<h3>Lab explanation</h3><p>Read this popup before the next task.</p><button aria-label="Close explanation">Close</button>';
+                  popup.querySelector('button').onclick = () => { window.__labEvents.push('close'); popup.close(); };
+                  doc.body.append(popup);
+                  popup.showModal();
+                }
+              };
+              root.querySelector('#next').onclick = () => {
+                if (!revealed) { window.__labEvents.push('next-before-reveal'); return; }
+                window.__labEvents.push(`next:${step}`);
+                // A valid long lab must not trip the idle-progress watchdog.
+                timeOffset += 16000;
+                if (step === 2) finish(); else render(step + 1);
+              };
+            };
+            render(0);
+          }, 250);
+          inner.srcdoc = '<!doctype html><title>Lab steps</title><reader-lab></reader-lab>';
+          scope.append(inner);
+        };
+      } else if (key === '13.2') {
+        scope.insertAdjacentHTML('beforeend', '<div id="visual"></div><button>Play animation</button>');
+        scope.querySelector('button').onclick = () => {
+          const animation = scope.querySelector('#visual').animate([{ opacity: 0.2 }, { opacity: 1 }], 60000);
+          window.__labAnimation = animation;
+          animation.onfinish = event => {
+            window.__animationFinishes.push({ trusted: event.isTrusted, time: animation.currentTime });
+            finish();
+          };
+        };
+      } else if (key === '13.3') {
+        scope.insertAdjacentHTML('beforeend', '<input type="range" min="0" max="42" value="0" aria-label="Animation progress">');
+        const range = scope.querySelector('input');
+        const native = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLInputElement.prototype, 'value');
+        Object.defineProperty(range, 'value', {
+          get() { return native.get.call(this); },
+          set() { window.__rangeWrites++; },
+        });
+        for (const type of ['input', 'change']) range.addEventListener(type, event => {
+          window.__timelineEvents.push({ type, value: range.value, local: event instanceof doc.defaultView.Event });
+          if (type === 'change' && range.value === '42') finish();
+        });
+      } else if (key === '13.4') {
+        scope.insertAdjacentHTML('beforeend', '<input type="range" class="animation-progress" aria-label="Volume" value="25"><div role="slider" tabindex="0" aria-label="Animation timeline" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">Timeline</div>');
+        scope.querySelector('input').oninput = () => window.__sliderEvents.push({ key: 'volume' });
+        scope.querySelector('[role="slider"]').onkeydown = event => {
+          window.__sliderEvents.push({ key: event.key, code: event.keyCode, local: event instanceof doc.defaultView.KeyboardEvent });
+          if (event.key === 'End') { event.currentTarget.setAttribute('aria-valuenow', '100'); finish(); }
+        };
+      } else if (key === '13.5') {
+        scope.insertAdjacentHTML('beforeend', '<canvas></canvas><button>Skip animation</button>');
+        scope.querySelector('button').onclick = () => { window.__labEvents.push('skip-animation'); finish(); };
+      } else if (key === '13.6') {
+        scope.insertAdjacentHTML('beforeend', '<textarea aria-label="Lab response"></textarea><button aria-controls="manual-answer">Next task</button><button aria-controls="manual-answer">Show answer</button><p id="manual-answer" hidden>Manual lab explanation</p>');
+        scope.querySelectorAll('button')[0].onclick = () => window.__handsOnNext++;
+        scope.querySelectorAll('button')[1].onclick = event => {
+          window.__handsOnReveals++;
+          event.currentTarget.setAttribute('aria-expanded', 'true');
+          scope.querySelector('p').hidden = false;
+        };
+      } else {
+        if (key === '13.8') window.__gradedLabVisits++;
+        scope.insertAdjacentHTML('beforeend', '<div class="adaptive-start-screen__widget"><button>Start</button></div>');
+        scope.querySelector('button').onclick = () => window.__labStarts++;
+      }
+    };
+  });
+  const labControls = labs.locator('#netacad-solver-controls');
+  await labControls.locator(':scope > summary').click();
+  await labControls.locator('.solver-checklist > summary').click();
+  await labControls.locator('.solver-chapters input[value="13"]').check();
+  await labControls.locator('input[type="number"]').fill('0.1');
+  check('animation skipping is enabled by default', await labControls.locator('.solver-skip-animations').isChecked());
+  await labControls.locator('.solver-checklist-start').click();
+  await labs.waitForFunction(() => !document.querySelector('#netacad-solver-controls').dataset.checklistRunning,
+    undefined, { timeout: 30000 }).catch(async error => {
+      throw new Error(`${error.message}\n${JSON.stringify(await labs.evaluate(() => ({
+        status: document.querySelector('.solver-checklist-status').textContent,
+        issues: document.querySelector('.solver-checklist-issues').textContent, events: window.__labEvents,
+      })))}`);
+    });
+  check('launches an inline lab once and handles delayed frame/shadow content and repeated Next controls', await labs.evaluate(() =>
+    JSON.stringify(window.__labEvents) === JSON.stringify(['launch', 'reveal:0', 'next:0', 'reveal:1', 'close', 'next:1', 'reveal:2', 'next:2', 'skip-animation'])));
+  check('finishes a native animation through its real finish event', await labs.evaluate(() =>
+    window.__animationFinishes.length === 1 && window.__animationFinishes[0].trusted && window.__animationFinishes[0].time === 60000));
+  check('seeks native range controls using their own frame events and native setter', await labs.evaluate(() =>
+    window.__rangeWrites === 0 && JSON.stringify(window.__timelineEvents) === JSON.stringify([
+      { type: 'input', value: '42', local: true }, { type: 'change', value: '42', local: true },
+    ])));
+  check('uses accessible End controls without changing animation volume', await labs.evaluate(() =>
+    JSON.stringify(window.__sliderEvents) === JSON.stringify([{ key: 'End', code: 35, local: true }])));
+  check('reveals hands-on instructions but never advances a response form or starts a lab self-check', await labs.evaluate(() =>
+    window.__handsOnReveals === 1 && window.__handsOnNext === 0 && window.__labStarts === 0 && window.__gradedLabVisits === 0));
+  check('only verifies the five labs/animations whose renderer confirmed completion', await labControls.evaluate(element =>
+    element.querySelector('progress').value === 5 && element.querySelector('.solver-checklist-issues').children.length === 3));
+  await labControls.locator('.solver-skip-animations').uncheck();
+  for (const early of [true, false]) {
+    await labs.evaluate(() => { document.querySelector('[data-topic="13.2"] img').alt = 'start'; });
+    await labControls.locator('.solver-checklist-start').click();
+    await labs.waitForFunction(early => window.__labAnimation?.playState === 'running'
+      && (early || document.querySelector('.solver-checklist-status').textContent.includes('playing animation')), early);
+    await labControls.locator('.solver-checklist-stop').click();
+    await labs.waitForFunction(() => !document.querySelector('#netacad-solver-controls').dataset.checklistRunning);
+    check(`Stop pauses full animation playback ${early ? 'immediately after Play' : 'while waiting for completion'}`, await labs.evaluate(() =>
+      window.__labAnimation.playState === 'paused' && window.__labAnimation.currentTime < 10000
+        && window.__animationFinishes.length === 1 && document.querySelector('[data-topic="13.2"] img').alt === 'start'));
+  }
+  await labs.close();
+
+  console.log('\n== Adobe Animate controls without accessible labels ==');
+  const adobe = await boot(browser, 'safe');
+  await adobe.evaluate(() => {
+    document.querySelector('.q1').remove();
+    document.querySelector('#submit').remove();
+    const outline = document.createElement('div');
+    outline.innerHTML = '<button class="nodeInfoContainer--fixture" aria-expanded="true">Module 14: Routing</button><button class="subModuleBtn--fixture">14.1. Routing<span class="subModuleStatus--fixture"><img alt="start"></span><span class="count">0 / 1</span></button>';
+    const topic = outline.querySelector('.subModuleBtn--fixture');
+    const frame = document.createElement('iframe');
+    frame.title = 'Course content';
+    frame.style.cssText = 'width:600px;height:400px';
+    document.body.append(outline, frame);
+    topic.onclick = () => {
+      const doc = frame.contentDocument;
+      doc.open();
+      doc.write('<!doctype html><title>Course | 14.1. Routing</title><div class="component is-incomplete" style="min-height:300px"><h2 class="js-heading">IP-pakket ingekapseld in een Ethernet-frame</h2><play-pause></play-pause><aa-scrubber></aa-scrubber></div>');
+      doc.close();
+      const component = doc.querySelector('.component');
+      const player = doc.querySelector('play-pause');
+      const scrubber = doc.querySelector('aa-scrubber');
+      const play = doc.createElement('button');
+      player.attachShadow({mode: 'open'}).append(play);
+      const timeline = doc.createElement('input');
+      timeline.type = 'range';
+      timeline.min = '0';
+      timeline.max = '400';
+      timeline.value = '0';
+      scrubber.attachShadow({mode: 'open'}).append(timeline);
+      const state = window.__adobe = {player, timeline, ticks: 0, commits: 0};
+      player.paused = true;
+      let timer;
+      const pause = () => { player.paused = true; clearInterval(timer); };
+      const finish = () => {
+        pause();
+        component.className = 'component is-complete';
+        doc.querySelector('.js-heading').classList.add('is-complete');
+        topic.querySelector('img').alt = 'completed';
+        topic.querySelector('.count').textContent = '1 / 1';
+      };
+      play.onclick = () => {
+        if (!player.paused) return pause();
+        player.paused = false;
+        timer = setInterval(() => {
+          state.ticks++;
+          timeline.value = Number(timeline.value) + 1;
+          if (timeline.value === timeline.max) finish();
+        }, 25);
+      };
+      timeline.oninput = pause;
+      timeline.onclick = () => {
+        state.commits++;
+        if (timeline.value === timeline.max) finish();
+      };
+      state.reset = () => { pause(); topic.querySelector('img').alt = 'start'; topic.querySelector('.count').textContent = '0 / 1'; };
+    };
+  });
+  const adobeControls = adobe.locator('#netacad-solver-controls');
+  await adobeControls.locator(':scope > summary').click();
+  await adobeControls.locator('.solver-checklist > summary').click();
+  await adobeControls.locator('.solver-checklist-refresh').click();
+  await adobeControls.locator('.solver-chapters input').check();
+  await adobeControls.locator('.solver-checklist-start').click();
+  await adobe.waitForFunction(() => !document.querySelector('#netacad-solver-controls').dataset.checklistRunning);
+  check('unlabelled Adobe scrubber reaches the end and commits native completion', await adobe.evaluate(() =>
+    window.__adobe.timeline.value === '400' && window.__adobe.commits === 1
+      && document.querySelector('.subModuleStatus--fixture img').alt === 'completed'));
+  await adobeControls.locator('.solver-skip-animations').uncheck();
+  await adobe.evaluate(() => window.__adobe.reset());
+  await adobeControls.locator('.solver-checklist-start').click();
+  await adobe.waitForFunction(() => window.__adobe.ticks >= 2);
+  await adobeControls.locator('.solver-checklist-stop').click();
+  await adobe.waitForFunction(() => !document.querySelector('#netacad-solver-controls').dataset.checklistRunning);
+  const adobeTicks = await adobe.evaluate(() => window.__adobe.ticks);
+  await adobe.waitForTimeout(200);
+  check('Stop pauses full Adobe playback without marking it complete', await adobe.evaluate(ticks =>
+    window.__adobe.player.paused && window.__adobe.ticks === ticks
+      && document.querySelector('.subModuleStatus--fixture img').alt === 'start', adobeTicks));
+  await adobe.close();
+
+  console.log('\n== Native change events and delayed shadow Submit buttons ==');
+  const native = await boot(browser, 'safe');
+  const nativeWarnings = [];
+  native.on('console', message => { if (message.type() === 'warning' && message.text().includes('[netacad-solver] brutal:')) nativeWarnings.push(message.text()); });
+  await native.evaluate(url => {
+    const first = window.__COMPONENTS__.find(component => component._id === 'q1');
+    const definitions = [{...first, _id: 'native1', body: '<p>Native question one.</p>'}, {...first, _id: 'native2', body: '<p>Native question two.</p>'}];
+    window.__COMPONENTS__ = definitions;
+    window.__nativeDefinitions = definitions;
+    for (const child of [...document.body.children]) {
+      if (child.id !== 'netacad-solver-controls' && child.tagName !== 'STYLE') child.remove();
+    }
+    const frame = document.createElement('iframe');
+    frame.style.cssText = 'width:900px;height:590px;border:0;display:block';
+    document.body.prepend(frame);
+    const doc = frame.contentDocument;
+    doc.open(); doc.write('<!doctype html><title>Native self-check</title><body></body>'); doc.close();
+    window.__nativeFrame = frame;
+    frame.contentWindow.__listeners = [];
+    frame.contentWindow.chrome = {
+      runtime: {...window.chrome.runtime, onMessage: {addListener: listener => frame.contentWindow.__listeners.push(listener)}},
+      storage: window.chrome.storage,
+    };
+    frame.contentWindow.fetch = async () => ({ok: true, json: async () => definitions});
+    window.__nativeMount = delay => {
+      doc.title = 'Native self-check';
+      doc.body.replaceChildren();
+      window.__nativeCounts = {native1: 0, native2: 0, answerChanges: 0, unrelated: 0};
+      window.__nativeInputs = [];
+      window.__nativeRoots = [];
+      for (const component of definitions) {
+        const id = component._id;
+        const host = doc.createElement('mcq-view');
+        host.className = id;
+        host.style.display = 'block';
+        doc.body.append(host);
+        const root = host.attachShadow({mode: 'open'});
+        window.__nativeRoots.push(root);
+        root.innerHTML = `<style>.component{min-height:180px;padding:12px} [role=radio]{padding:8px} input{display:none} button{padding:10px}</style>
+          <div class="component ${id}"><div>${component.body.replace(/<[^>]*>/g, '')}</div></div>`;
+        const question = root.querySelector('.component');
+        const controls = doc.createElement('buttons-view');
+        const buttonRoot = controls.attachShadow({mode: 'open'});
+        buttonRoot.innerHTML = '<button disabled aria-label="Submit answers"><span>Submit answers</span></button>';
+        const submit = buttonRoot.querySelector('button');
+        for (const [index, item] of component._items.entries()) {
+          const role = doc.createElement('div');
+          role.setAttribute('role', 'radio');
+          role.setAttribute('aria-checked', 'false');
+          role.tabIndex = 0;
+          role.innerHTML = `<input type="radio" aria-hidden="true" id="${id}-${index}-input" name="${id}"><label id="${id}-${index}-label">${item.text.replace(/<[^>]*>/g, '')}</label>`;
+          const input = role.querySelector('input');
+          if (index === 0) window.__nativeInputs.push(input);
+          input.onchange = () => {
+            window.__nativeCounts.answerChanges++;
+            role.setAttribute('aria-checked', String(input.checked));
+            setTimeout(() => { submit.disabled = false; }, delay);
+          };
+          question.append(role);
+        }
+        question.append(controls);
+        submit.onclick = () => {
+          window.__nativeCounts[id]++;
+          submit.disabled = true;
+          question.classList.add('is-complete');
+        };
+      }
+    };
+    window.__nativeMount(1600);
+  }, COMPONENT_URL);
+  await native.frames()[1].addScriptTag({content: bundle});
+  await native.evaluate(url => {
+    window.__listeners.forEach(listener => listener({componentsUrl: `${url}?native-submit`}));
+    window.__nativeFrame.contentWindow.__listeners.forEach(listener => listener({componentsUrl: `${url}?native-submit`}));
+  }, COMPONENT_URL);
+  await native.waitForFunction(() => window.__nativeInputs.every(input =>
+    input.parentElement.querySelector('label').classList.contains('netacad-solver-highlight')));
+  await native.waitForTimeout(1600);
+  await native.evaluate(() => document.querySelector('#netacad-solver-controls button[data-mode="brutal"]').click());
+  await native.waitForFunction(() => window.__nativeCounts.native1 === 1 && window.__nativeCounts.native2 === 1, null, {timeout: 10000});
+  check('uses native input changes to update the answer controls', await native.evaluate(() =>
+    window.__nativeCounts.answerChanges === 2 && window.__nativeInputs.every(input => input.checked)));
+  check('waits for validation and submits each inline shadow question exactly once', await native.evaluate(() =>
+    window.__nativeCounts.native1 === 1 && window.__nativeCounts.native2 === 1));
+  await native.evaluate(() => {
+    document.querySelector('#netacad-solver-controls button[data-mode="safe"]').click();
+    document.querySelector('#netacad-solver-controls button[data-mode="brutal"]').click();
+  });
+  await native.waitForTimeout(5500);
+  check('completed self-checks are not retried or reported as missing Submit', nativeWarnings.length === 0, nativeWarnings.join('; '));
+  await native.frames()[1].evaluate(press('y'));
+  await native.waitForTimeout(600);
+  check('does not resubmit completed self-checks', await native.evaluate(() =>
+    window.__nativeCounts.native1 === 1 && window.__nativeCounts.native2 === 1));
+
+  await native.evaluate(() => {
+    document.querySelector('#netacad-solver-controls button[data-mode="safe"]').click();
+    window.__nativeMount(500);
+    document.querySelector('#netacad-solver-controls button[data-mode="brutal"]').click();
+  });
+  await native.waitForFunction(() => window.__nativeInputs.some(input => input.checked));
+  await native.evaluate(() => document.querySelector('#netacad-solver-controls button[data-mode="safe"]').click());
+  await native.waitForTimeout(700);
+  check('Easy cancels a Submit that is still waiting for validation', await native.evaluate(() =>
+    window.__nativeCounts.native1 === 0 && window.__nativeCounts.native2 === 0));
+
+  await native.evaluate(() => {
+    window.__nativeMount(500);
+    document.querySelector('#netacad-solver-controls button[data-mode="brutal"]').click();
+  });
+  await native.waitForFunction(() => window.__nativeInputs.some(input => input.checked));
+  await native.evaluate(() => {
+    const doc = window.__nativeFrame.contentDocument;
+    doc.title = 'Next lesson';
+    doc.body.innerHTML = '<button>Submit unrelated form</button>';
+    doc.querySelector('button').onclick = () => { window.__nativeCounts.unrelated++; };
+  });
+  await native.waitForTimeout(700);
+  check('navigation cancels the pending Submit instead of clicking the next form', await native.evaluate(() =>
+    window.__nativeCounts.native1 === 0 && window.__nativeCounts.native2 === 0 && window.__nativeCounts.unrelated === 0));
+  await native.evaluate(url => {
+    const doc = window.__nativeFrame.contentDocument;
+    const components = [
+      {_id: 'reveal1', _component: 'hotgraphic', body: '<p>Course reveal, not a question.</p>', _items: [{text: '<p>Reveal instructions</p>'}]},
+      {_id: 'opaque1', _component: 'mcq', body: '<p>Unreadable practice controls.</p>', _items: [{text: '<p>Unavailable answer</p>', _isCorrect: true}]},
+    ];
+    window.__COMPONENTS__ = components;
+    window.__nativeFrame.contentWindow.fetch = async () => ({ok: true, json: async () => components});
+    doc.title = 'Interactive instructions';
+    doc.body.innerHTML = '<div class="reveal1"><p>Course reveal, not a question.</p><p>Reveal instructions</p></div><div class="opaque1"><p>Unreadable practice controls.</p></div><button>Submit unrelated form</button>';
+    doc.querySelector('button').onclick = () => { window.__nativeCounts.unrelated++; };
+    window.__listeners.forEach(listener => listener({componentsUrl: `${url}?reveal-only`}));
+    window.__nativeFrame.contentWindow.__listeners.forEach(listener => listener({componentsUrl: `${url}?reveal-only`}));
+  }, COMPONENT_URL);
+  await native.waitForTimeout(1700);
+  await native.evaluate(() => document.querySelector('#netacad-solver-controls button[data-mode="brutal"]').click());
+  await native.waitForTimeout(1800);
+  check('reveal-only and unreadable activities never submit another form or report a missing Submit', await native.evaluate(() =>
+    window.__nativeCounts.unrelated === 0) && nativeWarnings.length === 0, nativeWarnings.join('; '));
+  await native.evaluate(url => {
+    document.querySelector('#netacad-solver-controls button[data-mode="safe"]').click();
+    window.__COMPONENTS__ = window.__nativeDefinitions;
+    window.__nativeFrame.contentWindow.fetch = async () => ({ok: true, json: async () => window.__nativeDefinitions});
+    window.__nativeMount(0);
+    window.__nativeRoots.forEach(root => {
+      root.querySelector('buttons-view').remove();
+      root.addEventListener('change', () => root.querySelector('.component').classList.add('is-complete'));
+    });
+    window.__listeners.forEach(listener => listener({componentsUrl: `${url}?auto-check`}));
+    window.__nativeFrame.contentWindow.__listeners.forEach(listener => listener({componentsUrl: `${url}?auto-check`}));
+  }, COMPONENT_URL);
+  await native.waitForTimeout(1700);
+  await native.evaluate(() => document.querySelector('#netacad-solver-controls button[data-mode="brutal"]').click());
+  await native.waitForFunction(() => window.__nativeCounts.answerChanges === 2);
+  await native.waitForTimeout(5500);
+  check('automatically completed questions do not require a Submit button', await native.evaluate(() =>
+    window.__nativeCounts.native1 === 0 && window.__nativeCounts.native2 === 0
+      && window.__nativeRoots.every(root => root.querySelector('.component').classList.contains('is-complete')))
+    && nativeWarnings.length === 0, nativeWarnings.join('; '));
+  await native.close();
+
   await browser.close();
 
   console.log(`\n========================================`);

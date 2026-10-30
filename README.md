@@ -12,8 +12,8 @@ to that project. This is an independently maintained derivative, not a Cisco pro
 
 | Browser | File |
 | --- | --- |
-| Chrome, Edge, Brave, Vivaldi | `netacad-companion-v0.1.2-chromium.zip` |
-| Firefox 128+ | `netacad-companion-v0.1.2-firefox.xpi` |
+| Chrome, Edge, Brave, Vivaldi | `netacad-companion-v0.1.3-chromium.zip` |
+| Firefox 128+ | `netacad-companion-v0.1.3-firefox.xpi` |
 
 For Chromium browsers, extract the ZIP, open `chrome://extensions`, enable Developer
 mode and choose **Load unpacked**. Select the folder containing `manifest.json`.
@@ -34,6 +34,7 @@ focus the header and use arrow keys to move it; `Home` resets its position.
   them. Review and submit yourself.
 - **Brutal** selects and submits supported answers automatically. Switching to this
   mode can submit the current question immediately.
+  It waits for Submit to enable; Easy mode or navigation cancels a pending submission.
 
 Shortcuts: `Ctrl+Shift+Y` selects answers, `Ctrl+Shift+H` toggles highlights,
 and `Ctrl+Shift+M` changes modes. `Escape` closes the panel.
@@ -45,17 +46,20 @@ and `Ctrl+Shift+M` changes modes. `Escape` closes the panel.
 3. Keep the course tab open. Use **Stop** to cancel.
 
 The default step delay is 0.2 seconds. The checklist reads text in section order,
-opens supported reveals and tabs, skips native videos, and visits documents before
-returning to the course. Unconfirmed activities receive one retry and remain listed
-as pending. Video transcripts are not part of the generic button-clicking pass.
+opens supported reveals and tabs (including readable embedded labs), follows lab
+steps after revealing their content, and closes reveal popups. Videos and supported
+animation timelines are skipped by default; each has a separate playback option.
+Documents are visited before returning to the course. Unconfirmed activities receive
+one retry and remain pending. Video transcripts are not clicked.
 **Select answers** and `Ctrl+Shift+Y` remain available during a checklist; they
 only select answers, never submit. Mode switching stays locked until the run ends.
-The checklist does not click quiz or self-check **Start** buttons. Start those
-activities yourself, then use **Select answers** or `Ctrl+Shift+Y`.
+The checklist does not click quiz or self-check **Start** buttons, including inside
+labs. Start those activities yourself, then use **Select answers** or `Ctrl+Shift+Y`.
 
 Starting a checklist permits supported self-check submissions in Easy mode.
 Graded exams, unsupported activities and locked content remain manual. Reading a
 topic or opening a lab's instructions does not complete its graded quiz or lab.
+Lab response forms, external simulators, and unreadable or unsupported players remain manual.
 Completion is checked against NetAcad's indicators; the extension does not fabricate records.
 
 ## Build and test

@@ -4,7 +4,8 @@ import {
   deepHtmlFindByTextContent,
   enableTextSelectionRecursive,
   deepHtmlFindByTextContentPart, findVisibleFromComponents,
-  findElementsByIdClassAsync
+  findElementsByIdClassAsync,
+  unwrapElementContent
 } from "./domHelper";
 import { mountChapterChecklist } from "./chapterChecklist";
 
@@ -188,7 +189,7 @@ const highlightElement = (element, { accentIndex } = {}) => {
   }
 };
 
-const isVisibleElement = element => {
+const isVisibleElement = (element, requireViewport = true) => {
   if (!element)
     return false;
 
@@ -213,7 +214,10 @@ const isVisibleElement = element => {
     if (!rect || rect.width <= 0 || rect.height <= 0)
       return false;
 
-    return rect.bottom > 0 && rect.right > 0 && rect.top < view.innerHeight && rect.left < view.innerWidth;
+    if (view.frameElement && !isVisibleElement(view.frameElement, requireViewport))
+      return false;
+
+    return !requireViewport || (rect.bottom > 0 && rect.right > 0 && rect.top < view.innerHeight && rect.left < view.innerWidth);
   } catch (e) {
     return false;
   }
@@ -711,7 +715,7 @@ const setQuestionSections = async () => {
     try {
       const data = foundFromComponents[component._id];
 
-      const questionDiv = data?.questionDiv;
+      const questionDiv = data?.questionDiv && unwrapElementContent(data.questionDiv);
       const questionElement = data?.questionElement;
 
       if (!questionDiv)
@@ -1018,7 +1022,7 @@ const highlightQuestion = question => {
 const autoSolvedQuestions = new WeakSet();
 
 const clickAnswer = element => {
-  if (!element || typeof element.click !== 'function')
+  if (!element || typeof element.click !== 'function' || element.matches?.(':disabled, [aria-disabled="true"]'))
     return false;
 
   try {
@@ -1044,7 +1048,7 @@ const selectBasicAnswers = question => {
     const {input, label} = getBasicAnswerInput(question, component, index);
 
     // Never toggle an already-correct answer back off.
-    if (input && input.checked)
+    if (input?.checked)
       continue;
 
     if (clickAnswer(input || label))
@@ -1072,7 +1076,7 @@ const selectMatchPairs = question => {
 };
 
 const autoSolveQuestion = question => {
-  if (!question || question.skip || autoSolvedQuestions.has(question.questionDiv))
+  if (!question || question.skip || autoSolvedQuestions.has(questionComponent(question.questionDiv)))
     return 0;
 
   try {
@@ -1083,7 +1087,7 @@ const autoSolveQuestion = question => {
         : 0;
 
     if (selected)
-      autoSolvedQuestions.add(question.questionDiv);
+      autoSolvedQuestions.add(questionComponent(question.questionDiv));
 
     return selected;
   } catch (e) {
@@ -1094,25 +1098,34 @@ const autoSolveQuestion = question => {
   }
 };
 
+const questionComponent = scope => scope?.closest?.('.component') || scope?.querySelector?.('.component')
+  || scope?.host?.closest?.('.component') || scope;
+
 const autoSolveVisibleQuestions = () => {
   let selected = 0;
   let considered = 0;
+  const visible = [];
 
   questions.forEach(question => {
     if (!isObjectReference(question?.questionDiv) || question.skip)
       return;
 
-    if (question.questionDiv.isConnected === false)
+    if (question.questionDiv.isConnected === false || questionComponent(question.questionDiv).classList?.contains('is-complete'))
+      return;
+
+    if (question.questionType === 'basic' && (!question.inputs?.length
+      || !question.items?.some(item => item._shouldBeSelected ?? item._isCorrect)))
       return;
 
     if (!isVisibleElement(question.questionElement || question.questionDiv))
       return;
 
     considered++;
+    visible.push(question);
     selected += autoSolveQuestion(question);
   });
 
-  return { selected, considered };
+  return { selected, considered, visible };
 };
 
 // ---------------------------------------------------------------------------
@@ -1126,78 +1139,52 @@ const autoSolveVisibleQuestions = () => {
 // double-submit.
 // ---------------------------------------------------------------------------
 
-const findSubmitButton = (scope = document) => {
-  let candidates = [];
-
-  try {
-    candidates = [...scope.querySelectorAll('button, a[href], [role="button"]')];
-  } catch (e) {
-    candidates = [];
-  }
-
-  // Real quiz submit buttons usually sit at the BOTTOM of the page, below
-  // the fold, so being in the viewport is a preference (it picks between
-  // duplicate renderings), not a requirement. "Submit" / "Submit answers" /
-  // "Submit <icon>" all count; disabled ones never do.
-  const matches = candidates.filter(element => {
-    const text = normalizeElementText(element.textContent);
-    return text === 'submit' || text.startsWith('submit ');
+const findSubmitButton = (scope = document, enabledOnly = true) => {
+  const matches = deepHtmlSearchAll(scope, 'button, input[type="submit"], input[type="button"], a[href], [role="button"]').filter(element => {
+    if (!isVisibleElement(element, false) || (enabledOnly && element.matches(':disabled, [aria-disabled="true"]')))
+      return false;
+    return [element.textContent, element.value, element.getAttribute('aria-label')].some(value => {
+      const text = normalizeElementText(value);
+      return text === 'submit' || text.startsWith('submit ');
+    });
   });
-
-  for (const element of matches) {
-    if (element.disabled || element.getAttribute?.('aria-disabled') === 'true')
-      continue;
-
-    if (isVisibleElement(element))
-      return element;
-  }
-
-  // Not in the viewport (below the fold): programmatic .click() does not
-  // require visibility, so fall back to any enabled match.
-  for (const element of matches) {
-    if (element.disabled || element.getAttribute?.('aria-disabled') === 'true')
-      continue;
-
-    return element;
-  }
-
-  // Last resort: pierce shadow roots / iframes, like the highlighter does.
-  try {
-    const deep = deepHtmlFindByTextContent(scope, 'Submit')
-      || deepHtmlFindByTextContent(scope, 'submit');
-
-    if (deep && !deep.disabled)
-      return deep;
-  } catch (e) {
-  }
-
-  return null;
+  return matches.find(element => isVisibleElement(element)) || matches[0] || null;
 };
 
 const SUBMIT_DEBOUNCE = 400;
-let lastSubmitAt = 0;
+const submitTimes = new WeakMap();
 const submittedButtons = new WeakSet();
 
-const submitAnswers = (scope = document, once = false) => {
-  const now = Date.now();
+const submitAnswers = async (scope = document, once = false, signal) => {
+  scope = questionComponent(scope);
+  const originalScope = scope;
+  const doc = scope.ownerDocument || scope;
+  const title = doc.title;
+  // Inline self-checks have their own buttons; an exam can have one outside the question.
+  if (!once && !findSubmitButton(scope, false) && !scope.matches?.('.component')) scope = doc;
 
-  if (now - lastSubmitAt < SUBMIT_DEBOUNCE)
-    return false;
+  // ponytail: wait up to 5s for renderer validation; slower renderers need an event-based adapter.
+  for (let attempt = 0; attempt <= 100; attempt++) {
+    if (attempt) await new Promise(resolve => setTimeout(resolve, 50));
+    if (originalScope.classList?.contains('is-complete')) return false;
+    const controls = getTabControls();
+    if (signal?.aborted || !originalScope.isConnected || doc.title !== title
+      || (!once && ((controls?.dataset.mode || mode) !== 'brutal' || controls?.dataset.checklistRunning)))
+      return false;
 
-  const submit = findSubmitButton(scope);
-
-  if (!submit) {
-    console.warn('[netacad-solver] brutal: no enabled "Submit" button found on this page');
-    return false;
+    const submit = findSubmitButton(scope);
+    if (submit) {
+      const now = Date.now();
+      if ((once && submittedButtons.has(submit)) || now - (submitTimes.get(submit) || 0) < SUBMIT_DEBOUNCE
+        || !clickAnswer(submit)) return false;
+      submittedButtons.add(submit);
+      submitTimes.set(submit, now);
+      console.debug('[netacad-solver] brutal: submit clicked');
+      return true;
+    }
   }
-
-  if ((once && submittedButtons.has(submit)) || !clickAnswer(submit))
-    return false;
-
-  submittedButtons.add(submit);
-  lastSubmitAt = now;
-  console.debug('[netacad-solver] brutal: submit clicked');
-  return true;
+  console.warn('[netacad-solver] brutal: no enabled "Submit" button found on this page');
+  return false;
 };
 
 const highlightVisibleQuestions = () => {
@@ -1272,7 +1259,7 @@ const main = async checklist => {
     for (const question of questions) {
       if (!guardChecklist()) return;
       if (question.questionDiv.isConnected && autoSolvedQuestions.has(question.questionDiv))
-        submitAnswers(question.questionDiv, true);
+        await submitAnswers(question.questionDiv, true, checklist.signal);
     }
     return;
   }
@@ -1290,7 +1277,7 @@ const main = async checklist => {
     // autoSolvedQuestions set (and the submit debounce) keep repeat runs from
     // re-clicking answers or double-submitting.
     solveRequested = false;
-    const { selected, considered } = autoSolveVisibleQuestions();
+    const { selected, considered, visible } = autoSolveVisibleQuestions();
     const forceSubmit = brutalForceSubmit;
     brutalForceSubmit = false;
 
@@ -1299,7 +1286,7 @@ const main = async checklist => {
     // visible questions to submit - even if every answer was already
     // selected. No visible questions at all = nothing to submit.
     if (selected > 0 || (forceSubmit && considered > 0))
-      submitAnswers();
+      for (const question of visible) await submitAnswers(question.questionDiv);
   } else if (solveRequested) {
     solveRequested = false;
     autoSolveVisibleQuestions();
@@ -1469,7 +1456,7 @@ const requestHighlight = () => {
 const computeVisibleSignature = async () => {
   try {
     const visibleContainers = await findVisibleFromComponents(document, components);
-    return [...visibleContainers].sort().join('|');
+    return `${mode}:${[...visibleContainers].sort().join('|')}`;
   } catch (e) {
     return null;
   }
@@ -1521,6 +1508,11 @@ if (window) {
   }
 
   setInterval(async () => {
+    const tabMode = getTabControls()?.dataset.mode;
+    if (['safe', 'manual', 'brutal'].includes(tabMode) && tabMode !== mode) {
+      mode = tabMode;
+      brutalForceSubmit = tabMode === 'brutal';
+    }
     if (isSuspendRunning || components.length === 0)
       return;
 

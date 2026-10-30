@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "NetAcad Companion",
   "description": "Chapter checklists and answer assistance for NetAcad.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "browser_specific_settings": {
     "gecko": {
       "id": "meowcad-solver@kuy124.github.io",
@@ -48,6 +48,7 @@
   "content_scripts": [
     {
       "matches": ["https://*.netacad.com/*"],
+      "exclude_matches": ["https://auth.netacad.com/*"],
       "js": ["intercept.js"],
       "run_at": "document_start",
       "world": "MAIN",
@@ -55,6 +56,7 @@
     },
     {
       "matches": ["https://*.netacad.com/*"],
+      "exclude_matches": ["https://auth.netacad.com/*"],
       "js": ["catcher.js"],
       "run_at": "document_start",
       "world": "ISOLATED",
@@ -62,6 +64,7 @@
     },
     {
       "matches": ["https://*.netacad.com/*"],
+      "exclude_matches": ["https://auth.netacad.com/*"],
       "js": ["content.js"],
       "run_at": "document_start",
       "world": "ISOLATED",

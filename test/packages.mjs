@@ -34,6 +34,8 @@ for (const target of ['chromium', 'firefox']) {
   assert.deepEqual([...entries.keys()].sort(), [...allowed].sort(), 'only distribution files');
   const manifest = JSON.parse(entries.get('manifest.json').toString());
   assert.equal(manifest.version, version);
+  assert(manifest.content_scripts.every(script => script.exclude_matches?.includes('https://auth.netacad.com/*')),
+    'course scripts do not run in login frames');
   assert.equal(manifest.name, 'NetAcad Companion');
   assert(entries.get('NOTICE.md').toString().includes('ingui-n/netacad-solver'));
   if (target === 'firefox') {

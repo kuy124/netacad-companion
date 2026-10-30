@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.3
+
+- Adobe Animate players now use their native scrubber commit for skipping,
+  including translated and unlabelled controls; full playback remains stoppable.
+- Reused shadow-root unwrapping for batched question discovery, so controls and
+  completion state are read from the actual question rather than its host.
+- Completed and reveal-only activities no longer attempt submission; inline
+  questions cannot fall back to an unrelated form's Submit button.
+- Submit waits through slower renderer validation and rechecks completion after
+  every wait, including the final attempt.
+- Course scripts no longer run in login frames, preventing repeated cross-origin
+  answer-data fetch errors.
+
+- Fixed Brutal submission for delayed/nested-shadow controls, iframe mode changes, and separate inline self-checks; pending submits cancel on Easy mode or navigation.
+
+- Embedded reading/reveal labs are no longer excluded by name; graded labs and Packet Tracer stay manual.
+- Reveal text buttons, popups, and re-rendered lab steps are handled across readable frames and shadow roots.
+- Added default-on animation skipping using native timelines, seek controls, and renderer-provided end controls.
+- Lab response forms and assessment Start buttons remain untouched; Stop cancels native animation playback.
+
 ## [0.1.2] - Quiz-start fix and draggable panel
 
 ### Added

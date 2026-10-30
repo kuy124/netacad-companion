@@ -1,12 +1,21 @@
 import { deepHtmlSearchAll } from './domHelper';
 
-// ponytail: English outline, native media and document anchors; other players need renderer adapters.
+// ponytail: native timelines and readable frames; opaque players still need manual playback.
 // NetAcad's CSS-module prefixes are stable; the generated suffixes are not.
 const HEADER = 'button[class*="nodeInfoContainer"]';
 const TOPIC = 'button[class*="subModuleBtn"]';
 const text = element => (element?.textContent || '').replace(/\s+/g, ' ').trim();
-const rendered = element => element.getClientRects().length > 0
-  && element.ownerDocument.defaultView.getComputedStyle(element).visibility !== 'hidden';
+const label = element => (element.getAttribute('aria-label') || element.getAttribute('title')
+  || text(element) || element.value || '').replace(/\s+/g, ' ').trim();
+const rendered = element => {
+  const view = element.ownerDocument.defaultView;
+  if (!view || !element.isConnected) return false;
+  const frame = view.frameElement;
+  const host = element.getRootNode().host;
+  return element.getClientRects().length > 0 && view.getComputedStyle(element).visibility !== 'hidden'
+    && !element.closest('[hidden], [inert], [aria-hidden="true"]')
+    && (!frame || rendered(frame)) && (!host || rendered(host));
+};
 let activeRun = null;
 
 const complete = topic => {
@@ -86,9 +95,22 @@ const scrollTo = async (element, block, signal, pace) => {
 };
 
 const ACTIVITY_SELECTOR = '.component, .adaptive-start-screen__widget';
-const parentElement = element => element.parentElement || element.getRootNode().host;
-const findAssessmentStart = scope => deepHtmlSearchAll(scope, 'button, [role="button"], a').find(element =>
-  rendered(element) && /^(start|begin)(?: (?:quiz|assessment|activity|check))?$/i.test(text(element)));
+const parentElement = element => element.parentElement || element.getRootNode().host
+  || element.ownerDocument.defaultView?.frameElement;
+const LAB_START = /^(start|begin|open|launch)(\s+((the\s+)?(interactive\s+)?lab(oratory)?|activity))?$/i;
+const NEXT = /^(next|continue)(\s+(to\s+(the\s+)?)?(next\s+)?(step|task|slide|frame|page|part|section)(\s+\d+)?)?$/i;
+const ANIMATION_END = /^(skip(\s+(animation|to\s+(the\s+)?end))?|(jump|go)\s+to\s+(the\s+)?end|(last|final)\s+(step|slide|frame)|end(\s+animation)?)$/i;
+const isLab = (scope, title = '') => scope.matches('.lab, [data-component="lab"], [class*="lab__" i], [class*="lab-" i]')
+  || /\blabs?\b/i.test(`${title} ${text(deepHtmlSearchAll(scope, '.js-heading, h1, h2')[0])}`);
+const assessmentControl = element => {
+  for (let node = element; node; node = parentElement(node))
+    if (node.matches('assessment-block-strip-view, .adaptive-start-screen__widget, .assessment, .quiz, .exam, [data-graded="true"]')) return true;
+  return false;
+};
+const findAssessmentStart = (scope, title = '') => deepHtmlSearchAll(scope, 'button, [role="button"], a').find(element =>
+  rendered(element) && /^(start|begin)(?: (?:quiz|assessment|activity|check|exam|test))?$/i.test(label(element))
+  && !(isLab(scope, title) && LAB_START.test(label(element)) && !assessmentControl(element)
+    && !/\b(quiz|exam|graded|assessment|check your understanding)\b/i.test(text(scope))));
 const activityFor = element => {
   let activity;
   for (let node = element; node; node = parentElement(node))
@@ -100,7 +122,7 @@ const activityFor = element => {
 const readContent = async (element, signal, pace, guard) => {
   const doc = element.ownerDocument;
   let container = doc.scrollingElement;
-  for (let node = element; node; node = parentElement(node)) {
+  for (let node = element; node?.ownerDocument === doc; node = parentElement(node)) {
     if (node.clientHeight > 80 && node.scrollHeight > node.clientHeight + 2
       && /auto|scroll/.test(doc.defaultView.getComputedStyle(node).overflowY)) {
       container = node;
@@ -187,6 +209,9 @@ const walkTopic = async (topic, currentTopic, controls, controller, pace, solve,
   }, signal, 'This topic has no supported reading/activity headings.');
 
   const visited = new Set();
+  const steps = new Map();
+  const animationSteps = new WeakMap();
+  const nativePlayers = new WeakSet();
   const scrolled = new Set();
   const attempted = new Set();
   const errors = new Map();
@@ -204,11 +229,15 @@ const walkTopic = async (topic, currentTopic, controls, controller, pace, solve,
   let lastProgress = '';
   let idleDeadline = performance.now() + 30000;
   const advance = () => { idleDeadline = performance.now() + 30000; };
-  const actions = '[role="tab"], summary, button[aria-expanded="false"], [role="button"][aria-expanded="false"], '
-    + 'button[aria-controls], button[class*="reveal"], [class*="hotgraphic"] button, [class*="flipcard"][role="button"]';
+  const actions = '[role="tab"], summary, [aria-expanded="false"], [aria-controls], '
+    + '[class*="reveal" i], [class*="hotspot" i], [class*="hotgraphic"] button, [class*="flipcard" i]';
+  const buttons = 'button, [role="button"], [role="tab"], summary, a[href^="#"], input[type="button"]';
+  const dialogs = 'dialog[open], [role="dialog"], .notify__popup';
 
   while (true) {
     guard();
+    // ponytail: 1,000 changing controls per topic; raise for a known longer activity.
+    if (visited.size > 1000) throw new Error('This activity keeps changing. Finish it manually.');
     if (complete(currentTopic())) return;
     if (!currentTopic()) {
       controller.abort('The course outline changed. Choose chapters again.');
@@ -229,7 +258,7 @@ const walkTopic = async (topic, currentTopic, controls, controller, pace, solve,
       // Identical prose can occur in separate sections; text is not an identity.
       key: activityKey(element),
     })).filter(({ element }) => rendered(element) && (!element.classList.contains('is-complete')
-      || findAssessmentStart(element)));
+      || findAssessmentStart(element, topic.title)));
     const current = pending.find(item => !attempted.has(item.key));
     if (!current) {
       // Give native progress time to settle, then revisit only unfinished content once.
@@ -242,6 +271,7 @@ const walkTopic = async (topic, currentTopic, controls, controller, pace, solve,
         attempted.clear();
         scrolled.clear();
         visited.clear();
+        steps.clear();
         activeKey = undefined;
         status(`${topic.title} — rechecking unfinished sections`);
         continue;
@@ -250,14 +280,35 @@ const walkTopic = async (topic, currentTopic, controls, controller, pace, solve,
       throw new Error(`NetAcad has not confirmed completion after two passes.${details.length ? ` Pending: ${[...new Set(details)].slice(0, 6).join('; ')}` : ' An activity needs attention.'}`);
     }
     const scope = current.element;
+    const scopeNodes = deepHtmlSearchAll(scope, '*');
+    const lab = isLab(scope, topic.title);
+    const animation = scopeNodes.some(element => element.matches('aa-scrubber'))
+      || scope.matches('.animation, [data-component="animation"], [class*="animation__" i]')
+      || /\banimations?\b/i.test(`${topic.title} ${text(scopeNodes.find(element => element.matches('.js-heading, h1, h2')))}`);
+    for (const player of scopeNodes.filter(element => element.matches('play-pause'))) {
+      if (nativePlayers.has(player)) continue;
+      nativePlayers.add(player);
+      signal.addEventListener('abort', () => {
+        if (player.paused === false) player.shadowRoot?.querySelector('button')?.click();
+      }, { once: true });
+    }
+    const handsOn = lab && scopeNodes.some(element => rendered(element) && element.matches(
+      'textarea, select, input:not([type="hidden"]):not([type="button"]):not([type="range"]), [draggable="true"], [contenteditable="true"]'));
+    const step = `${pass}:${steps.get(current.key) || 0}`;
+    const state = () => deepHtmlSearchAll(scope, '*').filter(rendered).map(element =>
+      `${element.childElementCount ? '' : text(element)}:${element.getAttribute('aria-current') || ''}:${element.getAttribute('aria-selected') || ''}:${element.getAttribute('data-step') || ''}`).join('|');
+    const eligible = element => rendered(element) && !element.matches(':disabled, [aria-disabled="true"]')
+      && !assessmentControl(element)
+      && !(element.tagName === 'A' && !element.getAttribute('href')?.startsWith('#'))
+      && !/\b(submit|reset|restart|retry|previous|back|close|download|file_download|finish)\b|check\s+answers?|transcript|closed captions|subtitles|playback speed|full.?screen/i.test(`${label(element)} ${text(element)}`);
     const controlKey = element => {
       const path = [];
       for (let node = element; node && node !== scope; node = parentElement(node)) {
         path.push(node.id ? `${node.tagName}#${node.id}`
           : `${node.tagName}:${Array.prototype.indexOf.call(node.parentNode?.children || [], node)}`);
-        if (node.id) break;
       }
-      return `${current.key}/${path.join('/')}`;
+      const phase = (lab || animation) && /^(start|begin|open|launch|next|continue|play|skip|end)\b/i.test(label(element)) ? label(element) : '';
+      return `${current.key}/${step}/${path.join('/')}/${phase}`;
     };
     if (activeKey !== current.key) { activeKey = current.key; advance(); }
     try {
@@ -268,23 +319,41 @@ const walkTopic = async (topic, currentTopic, controls, controller, pace, solve,
         continue;
       }
 
+    if (findAssessmentStart(scope, topic.title))
+      throw new Error('Start this self-check yourself, then use Select answers. The checklist did not start it.');
+    if (scopeNodes.some(element => rendered(element) && !element.childElementCount && /\d+\s*of\s*\d+\s*questions?/i.test(text(element))))
+      throw new Error('An assessment is open. Complete it manually; the checklist did not submit it.');
+    if (scopeNodes.some(element => rendered(element) && element.matches('.js-heading, h1, h2')
+      && /\b(quiz|exam|graded assessment|graded lab)\b/i.test(text(element)) && !/check your understanding/i.test(text(element))))
+      throw new Error('A graded activity needs manual review; the checklist did not submit it.');
+
     // Video.js inserts its <video> only after the poster's Play control is clicked.
-    const play = deepHtmlSearchAll(scope, 'button.vjs-big-play-button').find(element => !visited.has(controlKey(element))
-      && rendered(element) && !element.disabled);
+    const play = scopeNodes.find(element => element.matches('button, [role="button"]') && !visited.has(controlKey(element))
+      && eligible(element) && (element.matches('button.vjs-big-play-button')
+        || animation && (/^play(\s+(the\s+)?animation)?$/i.test(label(element))
+          || element.getRootNode().host?.matches('play-pause') && element.getRootNode().host.paused === true)));
     if (play) {
       visited.add(controlKey(play));
       await scrollTo(play, 'center', signal, pace);
       guard();
       play.click();
-      await waitFor(() => {
-        guard();
-        return deepHtmlSearchAll(scope, 'video').some(rendered);
-      }, signal, 'This video player did not expose a supported video. Play it manually.');
-      advance();
+      try {
+        if (play.matches('button.vjs-big-play-button')) await waitFor(() => {
+          guard();
+          return deepHtmlSearchAll(scope, 'video').some(rendered);
+        }, signal, 'This video player did not expose a supported video. Play it manually.');
+        advance();
+        await delay(pace, signal);
+      } finally {
+        if (signal.aborted && animation)
+          for (const item of deepHtmlSearchAll(scope, '*').flatMap(element => element.getAnimations?.() || []))
+            if (item.playState === 'running') item.pause();
+      }
       continue;
     }
-    const video = deepHtmlSearchAll(scope, 'video').find(element => !visited.has(controlKey(element)) && !element.ended && rendered(element));
+    const video = scopeNodes.find(element => element.matches('video') && !visited.has(controlKey(element)) && !element.ended && rendered(element));
     if (video) {
+      const skipVideo = animation ? options.skipAnimations : options.skipVideos;
       visited.add(controlKey(video));
       const muted = video.muted;
       const paused = video.paused;
@@ -294,9 +363,9 @@ const walkTopic = async (topic, currentTopic, controls, controller, pace, solve,
         await scrollTo(video, 'center', signal, pace);
         video.muted = true;
         video.loop = false;
-        status(`${topic.title} — ${options.skipVideos ? 'skipping to the end of' : 'playing'} video`);
+        status(`${topic.title} — ${skipVideo ? 'skipping to the end of' : 'playing'} video`);
         video.play()?.catch(error => { playbackError = error; });
-        if (options.skipVideos) {
+        if (skipVideo) {
           await waitFor(() => {
             guard();
             if (playbackError || video.error) throw new Error('The video could not play. Open it manually.');
@@ -310,13 +379,72 @@ const walkTopic = async (topic, currentTopic, controls, controller, pace, solve,
           guard();
           if (playbackError || video.error) throw new Error('The video could not play. Open it manually, then restart.');
           return video.ended;
-        }, signal, 'Video playback did not finish. The player may require full playback.', options.skipVideos
+        }, signal, 'Video playback did not finish. The player may require full playback.', skipVideo
           ? 15000 : Math.min(1800000, Math.max(60000, duration * 1000 + 15000)));
       } finally {
         if (paused) video.pause();
         video.muted = muted;
         video.loop = loop;
       }
+      advance();
+      continue;
+    }
+
+    const timeline = animation && scopeNodes.find(element =>
+      element.matches('input[type="range"], [role="slider"]') && eligible(element) && !visited.has(controlKey(element))
+        && (options.skipAnimations || element.getRootNode().host?.matches('aa-scrubber'))
+        && (/seek|timeline|progress|scrub|playhead|position/i.test(`${label(element)} ${text(element.labels?.[0])} ${element.id} ${element.className}`)
+          || element.getRootNode().host?.matches('aa-scrubber'))
+        && !/volume|speed|zoom/i.test(`${label(element)} ${text(element.labels?.[0])}`));
+    if (timeline) {
+      visited.add(controlKey(timeline));
+      await scrollTo(timeline, 'center', signal, pace);
+      guard();
+      status(`${topic.title} — ${options.skipAnimations ? 'skipping to the end of' : 'playing'} animation`);
+      const view = timeline.ownerDocument.defaultView;
+      if (!options.skipAnimations) {
+        await waitFor(() => {
+          guard();
+          return !scope.isConnected || scope.classList.contains('is-complete') || Number(timeline.value) >= Number(timeline.max || 100);
+        }, signal, 'Animation playback did not finish. Open it manually.', 1800000);
+      } else if (timeline.matches('input[type="range"]')) {
+        Object.getOwnPropertyDescriptor(view.HTMLInputElement.prototype, 'value').set.call(timeline, timeline.max || '100');
+        timeline.dispatchEvent(new view.Event('input', { bubbles: true }));
+        timeline.dispatchEvent(new view.Event('change', { bubbles: true }));
+        // Adobe Animate commits scrubbing on click, not input/change.
+        if (timeline.getRootNode().host?.matches('aa-scrubber')) timeline.click();
+      } else {
+        timeline.focus();
+        for (const type of ['keydown', 'keyup'])
+          timeline.dispatchEvent(new view.KeyboardEvent(type, { key: 'End', code: 'End', keyCode: 35, which: 35, bubbles: true }));
+      }
+      await delay(pace, signal);
+      advance();
+      continue;
+    }
+
+    const nativeAnimations = animation ? [...new Set(scopeNodes.filter(rendered).flatMap(element => element.getAnimations?.() || []))]
+      .filter(item => item.playState !== 'finished' && item.playState !== 'idle' && item.playbackRate !== 0
+        && Number.isFinite(item.effect?.getComputedTiming().endTime) && animationSteps.get(item) !== step) : [];
+    if (nativeAnimations.length) {
+      for (const item of nativeAnimations) { visited.add(item); animationSteps.set(item, step); }
+      status(`${topic.title} — ${options.skipAnimations ? 'skipping to the end of' : 'playing'} animation`);
+      try {
+        if (options.skipAnimations) nativeAnimations.forEach(item => item.finish());
+        else {
+          nativeAnimations.forEach(item => item.play());
+          const duration = Math.max(...nativeAnimations.map(item => item.effect.getComputedTiming().endTime / Math.abs(item.playbackRate)));
+          await waitFor(() => {
+            guard();
+            return !scope.isConnected || nativeAnimations.every(item => item.playState === 'finished' || item.playState === 'idle');
+          }, signal, 'Animation playback did not finish. Open it manually.', Math.min(1800000, duration + 15000));
+        }
+      } finally {
+        if (signal.aborted) nativeAnimations.forEach(item => item.pause());
+      }
+      await delay(pace, signal);
+      guard();
+      if (scope.isConnected) await readContent(scope, signal, pace, guard);
       advance();
       continue;
     }
@@ -337,31 +465,54 @@ const walkTopic = async (topic, currentTopic, controls, controller, pace, solve,
       continue;
     }
 
-    if (findAssessmentStart(scope))
-      throw new Error('Start this self-check yourself, then use Select answers. The checklist did not start it.');
-
-    const action = deepHtmlSearchAll(scope, actions).find(element => !visited.has(controlKey(element))
-      && rendered(element) && !element.disabled && element.getAttribute('aria-disabled') !== 'true'
-      && !scope.matches('.media, .video, [class*="transcript"]')
-      && !element.closest('.video-js, [class*="transcript"]')
-      && !/transcript|closed captions|subtitles|playback speed|full.?screen/i.test(`${text(element)} ${element.getAttribute('aria-label') || ''}`));
+    const candidates = scopeNodes.filter(element => element.matches(buttons) && !visited.has(controlKey(element)) && eligible(element)
+      && ((element.matches(actions) || /^reveal\b|^show\s+(the\s+)?(answers?|solutions?|explanations?|hints?|feedback|more|details)\b/i.test(label(element)))
+        && !scope.matches('.media, .video, [class*="transcript"]') && !element.closest('.video-js, [class*="transcript"]')
+        && !NEXT.test(label(element)) && !ANIMATION_END.test(label(element)) && !(lab && LAB_START.test(label(element)))
+        || !handsOn && (lab && LAB_START.test(label(element)) || (lab || animation) && NEXT.test(label(element)))
+        || animation && !handsOn && options.skipAnimations && ANIMATION_END.test(label(element))));
+    // Reveal each task before moving on, even when Next appears first in the DOM.
+    const action = candidates.find(element => !NEXT.test(label(element))) || candidates[0];
     if (action) {
       visited.add(controlKey(action));
-      const previousHeight = scope.scrollHeight;
+      const forward = NEXT.test(label(action));
+      const before = forward ? state() : null;
+      const openDialogs = new Set(deepHtmlSearchAll(doc, dialogs).filter(rendered));
       await scrollTo(action, 'center', signal, pace);
       guard();
       if (!(action.tagName === 'SUMMARY' && action.parentElement.open)
-        && action.getAttribute('aria-expanded') !== 'true' && action.getAttribute('aria-selected') !== 'true') action.click();
+        && action.getAttribute('aria-expanded') !== 'true' && action.getAttribute('aria-selected') !== 'true') {
+        action.click();
+        advance();
+      }
       await delay(pace, signal);
       guard();
+      if (forward) {
+        await waitFor(() => { guard(); return !scope.isConnected || complete(currentTopic()) || state() !== before; },
+          signal, 'This step did not advance. Complete the remaining task manually.', 5000);
+        steps.set(current.key, (steps.get(current.key) || 0) + 1);
+      }
+      const popup = deepHtmlSearchAll(doc, dialogs).find(element => rendered(element) && !openDialogs.has(element));
       const revealed = action.getRootNode().getElementById?.(action.getAttribute('aria-controls'))
         || (action.tagName === 'SUMMARY' ? action.parentElement : null)
+        || popup
         || deepHtmlSearchAll(scope, '[role="tabpanel"], [role="region"]').find(rendered);
-      if (scope.isConnected && revealed && rendered(revealed)) await readContent(revealed, signal, pace, guard);
-      else if (scope.isConnected && scope.scrollHeight > previousHeight + 2) await readContent(scope, signal, pace, guard);
+      if (revealed?.isConnected && rendered(revealed)) await readContent(revealed, signal, pace, guard);
+      else if (scope.isConnected) await readContent(scope, signal, pace, guard);
+      if (popup?.isConnected && rendered(popup)) {
+        const close = deepHtmlSearchAll(popup, 'button, [role="button"]').find(element => rendered(element)
+          && !element.matches(':disabled, [aria-disabled="true"]')
+          && (/^close\b/i.test(label(element)) || element.matches('.notify__close-btn, .js-notify-close-btn')));
+        guard();
+        if (close) close.click();
+        else if (popup.tagName === 'DIALOG') popup.close();
+        else throw new Error('Close this reveal popup manually, then restart the checklist.');
+        await delay(pace, signal);
+      }
       continue;
     }
 
+    if (lab) throw new Error('Remaining lab tasks need manual review; no lab answers were entered or submitted.');
     await solve(doc, signal, scope);
     guard();
     if (!scope.isConnected) continue;
@@ -411,6 +562,7 @@ export const mountChapterChecklist = (controls, solve, updateControls) => {
       <fieldset class="solver-chapters"><legend>Chapters in this course</legend></fieldset>
       <fieldset class="solver-checklist-options" aria-label="Automation options">
         <label><input type="checkbox" class="solver-skip-videos" checked>Skip to the end of videos</label>
+        <label><input type="checkbox" class="solver-skip-animations" checked>Skip to the end of animations</label>
         <label><input type="checkbox" class="solver-visit-documents" checked>Open documents, then return to the course</label>
       </fieldset>
       <p>Documents open in a temporary tab. Only NetAcad's own indicators count as completed.</p>
@@ -481,6 +633,7 @@ export const mountChapterChecklist = (controls, solve, updateControls) => {
     list.disabled = refresh.disabled = paceInput.disabled = optionsInput.disabled = true;
     const options = {
       skipVideos: panel.querySelector('.solver-skip-videos').checked,
+      skipAnimations: panel.querySelector('.solver-skip-animations').checked,
       visitDocuments: panel.querySelector('.solver-visit-documents').checked,
     };
     stop.hidden = false;
@@ -513,7 +666,7 @@ export const mountChapterChecklist = (controls, solve, updateControls) => {
             if (!current) throw new Error('Topic is no longer in the course outline.');
             if (!complete(current)) {
               if (current.locked) throw new Error('Prerequisites have not been completed.');
-              if (/\b(quiz|exam|test|assessment|lab|packet tracer|survey|project)\b/i.test(topic.title))
+              if (/\b(quiz|exam|test|assessment|graded|packet tracer|survey|project)\b/i.test(topic.title))
                 throw new Error('This activity needs manual review; it was not opened or submitted.');
               status(`Opening ${topic.title}…`);
               current = await waitFor(() => {
@@ -526,7 +679,7 @@ export const mountChapterChecklist = (controls, solve, updateControls) => {
             if (!complete(currentTopic())) throw new Error('Completion has not been confirmed by NetAcad.');
             const openDoc = topicDocument(topic);
             const graded = openDoc && deepHtmlSearchAll(openDoc, '.js-heading').filter(element =>
-              !element.classList.contains('is-complete') && /\b(quiz|exam|graded assessment)\b/i.test(text(element))
+              !element.classList.contains('is-complete') && /\b(quiz|exam|graded assessment|graded lab)\b/i.test(text(element))
                 && !/check your understanding/i.test(text(element)));
             if (graded?.length)
               throw new Error(`Reading completed; remaining graded activity needs manual review: ${graded.map(text).join('; ')}`);
