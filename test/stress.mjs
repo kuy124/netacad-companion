@@ -1289,8 +1289,122 @@ async function scenarioBrutalOnDemand() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario X: Hotkey behaves like a real keypress (single tap works, no hold-spam)
+// Scenario CL: Brutal works while a chapter checklist is running
 // ---------------------------------------------------------------------------
+async function scenarioChecklistBrutal() {
+  const s = scenario('CL. Brutal works while a chapter checklist runs');
+
+  const components = [
+    {
+      _id: 'q1', _component: 'mcq', body: '<p>Body A</p>',
+      _items: [{ text: '<p>A</p>', _shouldBeSelected: true }, { text: '<p>B</p>', _shouldBeSelected: false }],
+    },
+    {
+      _id: 'q2', _component: 'mcq', body: '<p>Body C</p>',
+      _items: [{ text: '<p>C</p>', _shouldBeSelected: false }, { text: '<p>D</p>', _shouldBeSelected: true }],
+    },
+    {
+      _id: 'q3', _component: 'mcq', body: '<p>Body E</p>',
+      _items: [{ text: '<p>E</p>', _shouldBeSelected: true }, { text: '<p>F</p>', _shouldBeSelected: false }],
+    },
+  ];
+  const hidden = ' style="display:none"';
+  const html = `<!DOCTYPE html><body>
+    <section id="assessment">
+    <div class="component q1"><div>Body A</div>
+      <input type="checkbox" id="q1-0-input"><label id="q1-0-label" for="q1-0-input">A</label>
+      <input type="checkbox" id="q1-1-input"><label id="q1-1-label" for="q1-1-input">B</label></div>
+    <div class="component q2"><div>Body C</div>
+      <input type="checkbox" id="q2-0-input"><label id="q2-0-label" for="q2-0-input">C</label>
+      <input type="checkbox" id="q2-1-input"><label id="q2-1-label" for="q2-1-input">D</label></div>
+    <div class="component q3"${hidden}><div>Body E</div>
+      <input type="checkbox" id="q3-0-input"><label id="q3-0-label" for="q3-0-input">E</label>
+      <input type="checkbox" id="q3-1-input"><label id="q3-1-label" for="q3-1-input">F</label></div>
+    <div class="component other-self-check"><button id="unrelated-inline" type="button">Submit</button></div>
+    <form><button id="unrelated-form" type="button">Submit feedback</button></form>
+    <button id="submit" type="button">Submit answers</button>
+    </section>
+  </body>`;
+
+  // A chapter checklist is mid-run: chapterChecklist.js sets this dataset flag
+  // on the shared tab controls and only deletes it when the run ends.
+  const env = makeEnv({ components, html, id: 'checklist-brutal' });
+  const controls = () => env.doc.getElementById('netacad-solver-controls');
+  const submitClicks = () => env.clicks.filter(c => c === 'submit').length;
+
+  await sleep(1500);
+  controls().dataset.checklistRunning = 'true';
+
+  // The exam sits there with the checklist running around it: nothing may
+  // happen on its own while the checklist drives the page.
+  await sleep(2000);
+  s.check('checklist running: idle selects nothing',
+    env.doc.getElementById('q1-0-input')?.checked === false);
+  s.check('checklist running: idle submits nothing',
+    submitClicks() === 0, JSON.stringify(env.clicks));
+
+  // THE BUG: switching to Brutal used to be refused outright while a checklist
+  // ran, so the exam got answered but never submitted.
+  await env.toggleMode();
+  await sleep(2000);
+  s.check('checklist running: mode switches to brutal anyway',
+    controls()?.dataset.mode === 'brutal'
+    && env.doc.getElementById('netacad-solver-mode-badge')?.textContent === 'BRUTAL',
+    `mode=${controls()?.dataset.mode}`);
+  s.check('checklist running: brutal selects the correct answers',
+    env.doc.getElementById('q1-0-input')?.checked === true
+    && env.doc.getElementById('q2-1-input')?.checked === true,
+    `q1=${env.doc.getElementById('q1-0-input')?.checked} q2=${env.doc.getElementById('q2-1-input')?.checked}`);
+  s.check('checklist running: brutal SUBMITS the exam (the regression)',
+    submitClicks() === 1, JSON.stringify(env.clicks));
+  s.check('sibling lookup never submits another component or form',
+    !env.clicks.includes('unrelated-inline') && !env.clicks.includes('unrelated-form'),
+    JSON.stringify(env.clicks));
+  s.check('checklist running: mode buttons stay clickable',
+    !controls()?.querySelector('button[data-mode="brutal"]')?.disabled);
+
+  // Automatic machinery stays inert during the run even in brutal mode: no
+  // double submit from the 1.5s poll or from DOM churn.
+  env.doc.querySelector('.q1').appendChild(env.doc.createElement('span'));
+  await sleep(4000);
+  s.check('checklist + brutal: polls and mutations do not double-submit',
+    submitClicks() === 1, JSON.stringify(env.clicks));
+
+  // Switching back to Easy mid-run keeps working, and an explicit solve there
+  // stays solve-only (it must not turn into a submit behind the checklist).
+  await env.toggleMode();
+  await sleep(800);
+  s.check('checklist running: can switch back to Easy',
+    controls()?.dataset.mode === 'safe');
+  await env.trigger();
+  await sleep(1500);
+  s.check('checklist running: explicit solve re-selects without submitting',
+    env.doc.getElementById('q1-0-input')?.checked === true
+    && submitClicks() === 1,
+    `checked=${env.doc.getElementById('q1-0-input')?.checked} submits=${submitClicks()}`);
+
+  // A second explicit switch to Brutal force-submits on demand again.
+  await env.toggleMode();
+  await sleep(2000);
+  s.check('checklist running: second explicit brutal switch force-submits again',
+    submitClicks() === 2, JSON.stringify(env.clicks));
+
+  // When the checklist ends, the flag drops and Brutal is again fully
+  // automatic (the mode the user chose is honored, not reset).
+  delete controls().dataset.checklistRunning;
+  env.doc.querySelector('.q3').style.display = '';
+  env.doc.querySelector('.q3').appendChild(env.doc.createElement('span'));
+  await sleep(2500);
+  s.check('checklist over: automatic brutal picks the new question',
+    env.doc.getElementById('q3-0-input')?.checked === true,
+    `q3=${env.doc.getElementById('q3-0-input')?.checked}`);
+  s.check('checklist over: automatic brutal submits it',
+    submitClicks() === 3, JSON.stringify(env.clicks));
+
+  s.finish();
+  env.close();
+}
+
 async function scenarioHotkeyPressSemantics() {
   const s = scenario('X. Hotkey press semantics');
 
@@ -1377,6 +1491,7 @@ async function main() {
   await scenarioAutoSolve();
   await scenarioBrutal();
   await scenarioBrutalOnDemand();
+  await scenarioChecklistBrutal();
   await scenarioHotkeyPressSemantics();
 
   console.log(`\n========================================`);

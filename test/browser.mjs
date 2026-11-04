@@ -471,9 +471,9 @@ async function main() {
   await manual.waitForTimeout(700);
   check('checklist still blocks idle Brutal solving', (await snapshot(manual)).correct === false);
   const manualControls = manual.locator('#netacad-solver-controls');
-  check('Select answers stays enabled while mode changes stay locked',
+  check('Select answers and mode changes stay enabled during a checklist',
     await manualControls.locator('.solver-select').isEnabled()
-      && await manualControls.locator('button[data-mode="brutal"]').isDisabled());
+      && await manualControls.locator('button[data-mode="brutal"]').isEnabled());
   await manualControls.evaluate(element => { element.open = true; });
   await manualControls.locator('.solver-select').click();
   await manual.waitForFunction(() => document.getElementById('q1-0-input').checked);
@@ -1475,6 +1475,31 @@ async function main() {
     window.__nativeCounts.native1 === 0 && window.__nativeCounts.native2 === 0
       && window.__nativeRoots.every(root => root.querySelector('.component').classList.contains('is-complete')))
     && nativeWarnings.length === 0, nativeWarnings.join('; '));
+
+  console.log('\n== Sibling shadow Submit controls during a checklist ==');
+  await native.evaluate(() => {
+    const controls = document.querySelector('#netacad-solver-controls');
+    controls.querySelector('button[data-mode="safe"]').click();
+    window.__nativeMount(1600);
+    for (const root of window.__nativeRoots) root.append(root.querySelector('buttons-view'));
+    const unrelated = window.__nativeFrame.contentDocument.createElement('button');
+    unrelated.textContent = 'Submit unrelated form';
+    unrelated.onclick = () => { window.__nativeCounts.unrelated++; };
+    window.__nativeFrame.contentDocument.body.append(unrelated);
+    controls.dataset.checklistRunning = 'true';
+  });
+  await native.frames()[1].evaluate(press('y'));
+  await native.waitForFunction(() => window.__nativeInputs.every(input => input.checked));
+  check('Easy selects without submitting sibling shadow controls during a checklist', await native.evaluate(() =>
+    window.__nativeCounts.native1 === 0 && window.__nativeCounts.native2 === 0));
+  await native.evaluate(() => document.querySelector('#netacad-solver-controls button[data-mode="brutal"]').click());
+  await native.waitForTimeout(6000);
+  check('Brutal finds delayed sibling shadow Submit controls for preselected answers', await native.evaluate(() =>
+    window.__nativeCounts.native1 === 1 && window.__nativeCounts.native2 === 1), nativeWarnings.join('; '));
+  await native.waitForTimeout(2000);
+  check('sibling Submit lookup never clicks another frame form or double-submits', await native.evaluate(() =>
+    window.__nativeCounts.unrelated === 0 && window.__nativeCounts.native1 === 1 && window.__nativeCounts.native2 === 1));
+  check('sibling shadow controls produce no missing-Submit warning', nativeWarnings.length === 0, nativeWarnings.join('; '));
   await native.close();
 
   await browser.close();

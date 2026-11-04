@@ -12,8 +12,8 @@ to that project. This is an independently maintained derivative, not a Cisco pro
 
 | Browser | File |
 | --- | --- |
-| Chrome, Edge, Brave, Vivaldi | `netacad-companion-v0.1.3-chromium.zip` |
-| Firefox 128+ | `netacad-companion-v0.1.3-firefox.xpi` |
+| Chrome, Edge, Brave, Vivaldi | `netacad-companion-v0.1.4-chromium.zip` |
+| Firefox 128+ | `netacad-companion-v0.1.4-firefox.xpi` |
 
 For Chromium browsers, extract the ZIP, open `chrome://extensions`, enable Developer
 mode and choose **Load unpacked**. Select the folder containing `manifest.json`.
@@ -52,7 +52,10 @@ animation timelines are skipped by default; each has a separate playback option.
 Documents are visited before returning to the course. Unconfirmed activities receive
 one retry and remain pending. Video transcripts are not clicked.
 **Select answers** and `Ctrl+Shift+Y` remain available during a checklist; they
-only select answers, never submit. Mode switching stays locked until the run ends.
+only select answers, never submit. Switching to **Brutal** during a run answers
+and submits the questions in the current view once — that is how you submit a
+graded exam or quiz while the checklist continues on other topics. Switching
+back to Easy cancels pending submissions; automatic submission stays paused until the run ends.
 The checklist does not click quiz or self-check **Start** buttons, including inside
 labs. Start those activities yourself, then use **Select answers** or `Ctrl+Shift+Y`.
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4
+
+- Switching to Brutal during a chapter checklist now answers and submits the
+  current exam or quiz instead of being refused (it selected answers but never
+  submitted). The checklist's own steps and its solve-only hotkey are unchanged.
+- Submit lookup now finds sibling controls across shadow roots without clicking
+  another question's or form's Submit button.
+
 ## 0.1.3
 
 - Adobe Animate players now use their native scrubber commit for skipping,

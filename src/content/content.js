@@ -268,8 +268,10 @@ const toggleHighlights = () => {
 };
 
 const setMode = nextMode => {
-  if (getTabControls()?.dataset.checklistRunning)
-    return mode;
+  // Switching mode while a chapter checklist runs is allowed: the checklist
+  // skips exams and quizzes ("needs manual review"), and switching to Brutal
+  // there is how the user answers and submits one. Only automatic runs stay
+  // inert during a checklist (see main()), so this never races the checklist.
   if (!['safe', 'brutal'].includes(nextMode) || nextMode === mode)
     return mode;
 
@@ -314,8 +316,9 @@ const updateModeBadge = () => {
   }
 
   const checklistRunning = Boolean(controls.dataset.checklistRunning);
-  controls.querySelectorAll('button[data-mode]').forEach(button => { button.disabled = checklistRunning; });
-  controls.querySelectorAll('.solver-select').forEach(button => { button.disabled = false; });
+  // Mode buttons stay usable while a checklist runs: switching to Brutal then
+  // answers and submits the exam or quiz the checklist itself skipped.
+  controls.querySelectorAll('button[data-mode], .solver-select').forEach(button => { button.disabled = false; });
   const statusKey = `${mode}:${checklistRunning}`;
   if (controls.dataset.status !== statusKey) {
     controls.dataset.status = statusKey;
@@ -1139,10 +1142,21 @@ const autoSolveVisibleQuestions = () => {
 // double-submit.
 // ---------------------------------------------------------------------------
 
-const findSubmitButton = (scope = document, enabledOnly = true) => {
+const findSubmitButton = (scope = document, enabledOnly = true, questionScope) => {
+  const owners = new Set();
+  for (let node = questionScope; node; node = node.parentNode || node.host) owners.add(node);
   const matches = deepHtmlSearchAll(scope, 'button, input[type="submit"], input[type="button"], a[href], [role="button"]').filter(element => {
     if (!isVisibleElement(element, false) || (enabledOnly && element.matches(':disabled, [aria-disabled="true"]')))
       return false;
+    if (questionScope) {
+      let node = element;
+      let foreignOwner = false;
+      while (node && !owners.has(node)) {
+        foreignOwner ||= Boolean(node.matches?.('.component, form'));
+        node = node.parentNode || node.host;
+      }
+      if (!node || (foreignOwner && node !== questionScope)) return false;
+    }
     return [element.textContent, element.value, element.getAttribute('aria-label')].some(value => {
       const text = normalizeElementText(value);
       return text === 'submit' || text.startsWith('submit ');
@@ -1155,13 +1169,19 @@ const SUBMIT_DEBOUNCE = 400;
 const submitTimes = new WeakMap();
 const submittedButtons = new WeakSet();
 
-const submitAnswers = async (scope = document, once = false, signal) => {
+const submitAnswers = async (scope = document, once = false, signal, { force = false } = {}) => {
   scope = questionComponent(scope);
   const originalScope = scope;
   const doc = scope.ownerDocument || scope;
   const title = doc.title;
-  // Inline self-checks have their own buttons; an exam can have one outside the question.
-  if (!once && !findSubmitButton(scope, false) && !scope.matches?.('.component')) scope = doc;
+  // Submit may be a sibling of the question, including across shadow roots.
+  // Stop before the page body; never borrow another component or form's control.
+  while (!findSubmitButton(scope, false, originalScope)) {
+    const parent = scope.parentNode || scope.host;
+    if (!parent || parent === doc.body || parent === doc.documentElement || parent === doc) break;
+    scope = parent;
+  }
+  if (!once && !originalScope.matches?.('.component') && !findSubmitButton(scope, false, originalScope)) scope = doc;
 
   // ponytail: wait up to 5s for renderer validation; slower renderers need an event-based adapter.
   for (let attempt = 0; attempt <= 100; attempt++) {
@@ -1169,10 +1189,11 @@ const submitAnswers = async (scope = document, once = false, signal) => {
     if (originalScope.classList?.contains('is-complete')) return false;
     const controls = getTabControls();
     if (signal?.aborted || !originalScope.isConnected || doc.title !== title
-      || (!once && ((controls?.dataset.mode || mode) !== 'brutal' || controls?.dataset.checklistRunning)))
+      || (!once && ((controls?.dataset.mode || mode) !== 'brutal'
+        || (controls?.dataset.checklistRunning && !force))))
       return false;
 
-    const submit = findSubmitButton(scope);
+    const submit = findSubmitButton(scope, true, originalScope);
     if (submit) {
       const now = Date.now();
       if ((once && submittedButtons.has(submit)) || now - (submitTimes.get(submit) || 0) < SUBMIT_DEBOUNCE
@@ -1216,7 +1237,10 @@ const main = async checklist => {
 
   const tabControls = getTabControls();
   const checklistRunning = Boolean(tabControls?.dataset.checklistRunning);
-  if (!checklist && checklistRunning && !solveRequested)
+  // Automatic runs stay inert while a checklist runs. An explicit user action
+  // (solve request, or switching to Brutal, which arms brutalForceSubmit) goes
+  // through so the user can answer an exam the checklist skipped.
+  if (!checklist && checklistRunning && !solveRequested && !brutalForceSubmit)
     return;
 
   const guardChecklist = () => {
@@ -1267,8 +1291,20 @@ const main = async checklist => {
   highlightVisibleQuestions();
 
   if (checklistRunning) {
-    // An explicit user solve stays available, but never becomes a Brutal submit.
-    if (solveRequested) { solveRequested = false; autoSolveVisibleQuestions(); }
+    // An explicit solve stays solve-only, even in Brutal mode: it selects the
+    // answers for review without submitting. Switching TO Brutal, by contrast,
+    // arms a one-shot force submit that answers and submits the questions in
+    // the current view - typically an exam or quiz the checklist itself skips.
+    if (solveRequested) {
+      solveRequested = false;
+      autoSolveVisibleQuestions();
+    } else if (brutalForceSubmit) {
+      brutalForceSubmit = false;
+      const { selected, considered, visible } = autoSolveVisibleQuestions();
+      if (selected > 0 || considered > 0)
+        for (const question of visible)
+          await submitAnswers(question.questionDiv, false, undefined, { force: true });
+    }
     return;
   }
 
@@ -1286,7 +1322,8 @@ const main = async checklist => {
     // visible questions to submit - even if every answer was already
     // selected. No visible questions at all = nothing to submit.
     if (selected > 0 || (forceSubmit && considered > 0))
-      for (const question of visible) await submitAnswers(question.questionDiv);
+      for (const question of visible)
+        await submitAnswers(question.questionDiv, false, undefined, { force: forceSubmit });
   } else if (solveRequested) {
     solveRequested = false;
     autoSolveVisibleQuestions();
@@ -1508,10 +1545,13 @@ if (window) {
   }
 
   setInterval(async () => {
-    const tabMode = getTabControls()?.dataset.mode;
+    const tabControls = getTabControls();
+    const tabMode = tabControls?.dataset.mode;
     if (['safe', 'manual', 'brutal'].includes(tabMode) && tabMode !== mode) {
       mode = tabMode;
-      brutalForceSubmit = tabMode === 'brutal';
+      // A synced mode must never arm a force submit while a checklist runs;
+      // force submits only come from the user switching to Brutal explicitly.
+      brutalForceSubmit = tabMode === 'brutal' && !tabControls?.dataset.checklistRunning;
     }
     if (isSuspendRunning || components.length === 0)
       return;
